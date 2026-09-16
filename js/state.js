@@ -19,6 +19,6 @@ export const state = {
   drawingTempLine: null,
   isPlaying: false,
   playInterval: null,
-  weatherOverlayLayer: null,
-  isWeatherOverlayVisible: false
+  isWeatherOverlayVisible: false,
+  departureVariantLayerGroup: null
 };

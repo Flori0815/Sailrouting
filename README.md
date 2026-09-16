@@ -2,11 +2,13 @@
 
 A browser-only isochrone weather router for the Dehler 37 CR: plot waypoints
 on a chart, pull live wind/current data, and get a VMG-optimized route with
-ETA, leg-by-leg breakdown, and GPX export. A map overlay shows wind and
-current across the visible chart, and a departure-window search compares
-routes across a range of start times to help pick the best one. There is no
-backend — every computation runs client-side, and weather/current data
-comes straight from the free [Open-Meteo](https://open-meteo.com/) APIs.
+ETA, leg-by-leg breakdown, and GPX export. An animated particle field
+visualizes wind and current across the visible chart (Windy-style), and a
+departure-window search compares routes across a range of start times —
+optionally drawing every candidate route on the map — to help pick the best
+one. There is no backend — every computation runs client-side, and
+weather/current data comes straight from the free
+[Open-Meteo](https://open-meteo.com/) APIs.
 
 ## Project structure
 
@@ -30,9 +32,9 @@ js/
   voyage.js                    Timeline scrubber / playback
   gpx.js                        GPX export
   optimizer.js                  Pure route computation + orchestrates a run
-  overlay.js                     Wind/current map overlay (grid-sampled)
-  departureWindow.js              Compares routes across a ±X hour window
-  main.js                          Entry point: map init + event wiring
+  particleField.js                Animated wind/current particle overlay
+  departureWindow.js               Compares routes across a ±X hour window
+  main.js                           Entry point: map init + event wiring
 ```
 
 Everything is loaded as native ES modules (`<script type="module">`), so
@@ -68,20 +70,27 @@ you):
 
 After that first setup, every merge to `main` redeploys automatically.
 
-## Wind/current overlay and departure-time search
+## Wind/current animation and departure-time search
 
-- **Wind & Strom overlay** (header toggle, wind icon): samples a 5×4 grid
-  across the current map view and draws each point's live wind (blue) and
-  current (teal) as a small rotated arrow + speed label. Refreshes
-  (debounced ~700ms) whenever the map is panned or zoomed while the
-  overlay is on. Uses the same cached `fetchMetoceanData` as routing, so
-  it stays polite towards the free API.
+- **Animated wind & current overlay** (header toggle, wind icon): samples
+  a 6×5 grid of live wind/current across the current map view, bilinearly
+  interpolates it into a continuous flow field, and animates ~350 small
+  particles drifting along that field on a transparent canvas layered over
+  the map — wind in sky blue, current in emerald, fading trails like
+  Windy/earth.nullschool. Refreshes the sampled grid (debounced ~700ms) on
+  pan/zoom; the animation itself runs via `requestAnimationFrame` and pans
+  with the map every frame. Reuses the same cached `fetchMetoceanData` as
+  routing, so it stays polite towards the free API.
 - **Beste Abfahrtszeit** (Waypoints tab): given a departure time, a window
   (±1–6 h) and a step size, this runs the full isochrone solve for each
   candidate departure time and lists them sorted by total passage time,
   with the fastest highlighted. Click "Anwenden" on any row to apply that
-  candidate as the active route. Capped at 15 candidates per search since
-  each one is a full route computation.
+  candidate as the active route. Check "Alle Varianten auf Karte anzeigen"
+  to draw every candidate's route on the map at once as thin, color-coded,
+  hoverable lines (cooler/blue = earlier departures, warmer/amber = later
+  ones, solid emerald = fastest) so the spread between options is visible
+  at a glance. Capped at 15 candidates per search since each one is a full
+  route computation.
 
 ## Notes on production readiness
 

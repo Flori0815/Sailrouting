@@ -10,8 +10,8 @@ import { drawPolarDiagramCanvas } from './polarChart.js';
 import { initVoyageScrubber } from './voyage.js';
 import { exportGpxFile } from './gpx.js';
 import { triggerIsochroneRouteOptimization } from './optimizer.js';
-import { initWeatherOverlay, toggleWeatherOverlay } from './overlay.js';
-import { findBestDepartureTime } from './departureWindow.js';
+import { initParticleField, toggleWeatherOverlay } from './particleField.js';
+import { findBestDepartureTime, toggleDepartureVariantsOnMap } from './departureWindow.js';
 
 function initMap() {
   state.map = L.map('map', {
@@ -118,6 +118,9 @@ function wireControls() {
   });
 
   document.getElementById('btnFindBestDeparture').addEventListener('click', findBestDepartureTime);
+  document.getElementById('checkShowAllDepartureVariants').addEventListener('change', (e) => {
+    toggleDepartureVariantsOnMap(e.target.checked);
+  });
 
   document.getElementById('quickPresetSelector').addEventListener('change', (e) => {
     loadPreset(e.target.value);
@@ -191,7 +194,7 @@ function wireControls() {
 function init() {
   try {
     initMap();
-    initWeatherOverlay();
+    initParticleField();
     wireControls();
 
     const now = new Date();
