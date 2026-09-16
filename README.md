@@ -91,6 +91,15 @@ After that first setup, every merge to `main` redeploys automatically.
   ones, solid emerald = fastest) so the spread between options is visible
   at a glance. Capped at 15 candidates per search since each one is a full
   route computation.
+- The voyage playback scrubber drives the particle field's simulated time
+  (`setFieldTime` in `particleField.js`), so the animation reflects
+  conditions at the boat's current point in the voyage rather than always
+  showing live "now" weather. Position interpolation for both the scrubber
+  and the animated boat is done by real elapsed sailing time
+  (`routePointTimes`/`elapsedStart` in `optimizer.js`), not by point index —
+  a multi-waypoint route inserts a zero-duration point at every interior
+  waypoint, so index-based interpolation made the boat appear to stall
+  there.
 
 ## Notes on production readiness
 

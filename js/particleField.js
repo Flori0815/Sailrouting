@@ -10,19 +10,24 @@ const GRID_ROWS = 5;
 const REFRESH_DEBOUNCE_MS = 700;
 const WIND_PARTICLE_COUNT = 220;
 const CURRENT_PARTICLE_COUNT = 140;
-const WIND_COLOR = '125,211,252'; // sky-300
-const CURRENT_COLOR = '52,211,153'; // emerald-400
-const TRAIL_FADE_ALPHA = 0.06;
+// Kept visually distinct from the route polyline's emerald green and from
+// each other so both fields stay legible against the dark chart.
+const WIND_COLOR = '56,189,248'; // sky-400
+const CURRENT_COLOR = '45,212,191'; // teal-400
+const TRAIL_FADE_ALPHA = 0.05;
 const MIN_PX_PER_FRAME = 0.6;
 const MAX_PX_PER_FRAME = 5.5;
 
 let canvas = null;
 let ctx = null;
+let cssWidth = 0;
+let cssHeight = 0;
 let animationHandle = null;
 let field = null;
 let particles = [];
 let refreshDebounceTimer = null;
 let fieldRequestToken = 0;
+let fieldTimeOverride = null;
 
 // Matches the app's existing "rotate(dirDeg)" visual convention (a
 // south-pointing glyph rotated clockwise by the from-bearing) so animated
@@ -30,6 +35,14 @@ let fieldRequestToken = 0;
 function bearingToUnitVector(dirDeg) {
   const rad = ((180 + dirDeg) % 360) * Math.PI / 180;
   return { dx: Math.sin(rad), dy: Math.cos(rad) }; // dx: +east, dy: +north
+}
+
+// Lets other modules (the voyage playback scrubber, applying a route) drive
+// which point in time the animated field represents, instead of it always
+// showing live "now" conditions regardless of a simulated voyage clock.
+export function setFieldTime(date) {
+  fieldTimeOverride = date instanceof Date ? date : new Date(date);
+  if (state.isWeatherOverlayVisible) scheduleFieldRefresh();
 }
 
 async function rebuildField() {
@@ -48,8 +61,8 @@ async function rebuildField() {
     }
   }
 
-  const now = new Date();
-  const samples = await Promise.all(points.map(([lat, lng]) => fetchMetoceanData(lat, lng, now)));
+  const sampleTime = fieldTimeOverride || new Date();
+  const samples = await Promise.all(points.map(([lat, lng]) => fetchMetoceanData(lat, lng, sampleTime)));
   if (token !== fieldRequestToken) return; // a newer refresh superseded this one
 
   const n = points.length;
@@ -113,8 +126,17 @@ function respawnParticle(p) {
 function resizeCanvas() {
   if (!canvas || !state.map) return;
   const size = state.map.getSize();
-  canvas.width = size.x;
-  canvas.height = size.y;
+  const dpr = window.devicePixelRatio || 1;
+  cssWidth = size.x;
+  cssHeight = size.y;
+  canvas.style.width = `${cssWidth}px`;
+  canvas.style.height = `${cssHeight}px`;
+  // Render at native pixel density — without this the canvas is upscaled by
+  // the browser on high-DPI screens, which is what made the particle
+  // streaks look soft/washed-out against the map underneath.
+  canvas.width = cssWidth * dpr;
+  canvas.height = cssHeight * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
 function stepAndDraw() {
@@ -123,14 +145,13 @@ function stepAndDraw() {
     return;
   }
 
-  const w = canvas.width, h = canvas.height;
-
   // Fade previous strokes by reducing the canvas's own alpha (does not tint
   // the map underneath), leaving short motion trails behind each particle.
   ctx.globalCompositeOperation = 'destination-out';
   ctx.fillStyle = `rgba(0,0,0,${TRAIL_FADE_ALPHA})`;
-  ctx.fillRect(0, 0, w, h);
+  ctx.fillRect(0, 0, cssWidth, cssHeight);
   ctx.globalCompositeOperation = 'source-over';
+  ctx.lineCap = 'round';
 
   for (const p of particles) {
     if (!p.initialized) respawnParticle(p);
@@ -143,7 +164,7 @@ function stepAndDraw() {
     }
 
     const before = state.map.latLngToContainerPoint([p.lat, p.lng]);
-    if (before.x < -20 || before.x > w + 20 || before.y < -20 || before.y > h + 20) {
+    if (before.x < -20 || before.x > cssWidth + 20 || before.y < -20 || before.y > cssHeight + 20) {
       respawnParticle(p);
       continue;
     }
@@ -153,8 +174,21 @@ function stepAndDraw() {
     const afterY = before.y - sample.dy * pxPerFrame; // canvas y grows downward, north is up
     const afterLatLng = state.map.containerPointToLatLng([afterX, afterY]);
 
-    ctx.strokeStyle = `rgba(${p.kind === 'wind' ? WIND_COLOR : CURRENT_COLOR}, 0.85)`;
-    ctx.lineWidth = p.kind === 'wind' ? 1.3 : 1.1;
+    const color = p.kind === 'wind' ? WIND_COLOR : CURRENT_COLOR;
+    const coreWidth = p.kind === 'wind' ? 2.0 : 1.7;
+
+    // Cheap glow: a wide, faint halo stroke under a thin, bright core —
+    // reads as a soft neon streak without the cost of real shadow blur at
+    // this particle count.
+    ctx.strokeStyle = `rgba(${color}, 0.22)`;
+    ctx.lineWidth = coreWidth * 2.6;
+    ctx.beginPath();
+    ctx.moveTo(before.x, before.y);
+    ctx.lineTo(afterX, afterY);
+    ctx.stroke();
+
+    ctx.strokeStyle = `rgba(${color}, 0.95)`;
+    ctx.lineWidth = coreWidth;
     ctx.beginPath();
     ctx.moveTo(before.x, before.y);
     ctx.lineTo(afterX, afterY);
@@ -170,7 +204,7 @@ function stepAndDraw() {
 export function initParticleField() {
   canvas = document.createElement('canvas');
   canvas.className = 'weather-particle-canvas';
-  canvas.style.cssText = 'position:absolute; inset:0; pointer-events:none; z-index:450; display:none;';
+  canvas.style.cssText = 'position:absolute; top:0; left:0; pointer-events:none; z-index:450; display:none;';
   state.map.getContainer().appendChild(canvas);
   ctx = canvas.getContext('2d');
   resizeCanvas();
