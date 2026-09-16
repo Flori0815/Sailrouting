@@ -1,7 +1,7 @@
 import { state } from './state.js';
 import { fetchMetoceanData } from './metocean.js';
 
-// Windy-style animated flow field: a coarse grid of live wind/current
+// Windy-style animated flow field: a coarse grid of live wind/current/wave
 // samples is bilinearly interpolated so a moderate number of particles can
 // be advected smoothly across the visible map, redrawn every animation
 // frame as fading streaks on a transparent canvas layered over the map.
@@ -10,13 +10,21 @@ const GRID_ROWS = 5;
 const REFRESH_DEBOUNCE_MS = 700;
 const WIND_PARTICLE_COUNT = 220;
 const CURRENT_PARTICLE_COUNT = 140;
+const WAVE_PARTICLE_COUNT = 120;
 // Kept visually distinct from the route polyline's emerald green and from
-// each other so both fields stay legible against the dark chart.
+// each other so all three fields stay legible against the dark chart.
 const WIND_COLOR = '56,189,248'; // sky-400
 const CURRENT_COLOR = '45,212,191'; // teal-400
+const WAVE_COLOR = '167,139,250'; // violet-400 — matches the wave-sensitivity UI elsewhere
 const TRAIL_FADE_ALPHA = 0.05;
 const MIN_PX_PER_FRAME = 0.6;
 const MAX_PX_PER_FRAME = 5.5;
+// Wave height (metres) doesn't map to a flow speed the way wind/current
+// speeds do, so it gets its own, more generous scale factor — otherwise
+// typical 0.5-2m seas would all clamp to the same near-minimum speed and
+// the wave particles would look almost static next to wind and current.
+const WAVE_SPEED_SCALE = 1.4;
+const FLOW_SPEED_SCALE = 0.35;
 
 let canvas = null;
 let ctx = null;
@@ -68,15 +76,25 @@ async function rebuildField() {
   const n = points.length;
   const windU = new Float32Array(n), windV = new Float32Array(n), windSpeed = new Float32Array(n);
   const curU = new Float32Array(n), curV = new Float32Array(n), curSpeed = new Float32Array(n);
+  const waveU = new Float32Array(n), waveV = new Float32Array(n), waveHeight = new Float32Array(n);
 
   samples.forEach((met, i) => {
     const w = bearingToUnitVector(met.twd);
     windU[i] = w.dx; windV[i] = w.dy; windSpeed[i] = met.tws;
     const c = bearingToUnitVector(met.curDir);
     curU[i] = c.dx; curV[i] = c.dy; curSpeed[i] = met.curSpeed;
+    const wv = bearingToUnitVector(met.waveDir);
+    waveU[i] = wv.dx; waveV[i] = wv.dy; waveHeight[i] = met.waveHeight;
   });
 
-  field = { bounds: { north, south, east, west }, cols: GRID_COLS, rows: GRID_ROWS, windU, windV, windSpeed, curU, curV, curSpeed };
+  field = {
+    bounds: { north, south, east, west },
+    cols: GRID_COLS,
+    rows: GRID_ROWS,
+    windU, windV, windSpeed,
+    curU, curV, curSpeed,
+    waveU, waveV, waveHeight
+  };
 }
 
 function scheduleFieldRefresh() {
@@ -97,9 +115,9 @@ function sampleField(lat, lng, kind) {
   const r0 = Math.floor(rowF), r1 = Math.min(r0 + 1, rows - 1), fr = rowF - r0;
 
   const idx = (r, c) => r * cols + c;
-  const uField = kind === 'wind' ? field.windU : field.curU;
-  const vField = kind === 'wind' ? field.windV : field.curV;
-  const sField = kind === 'wind' ? field.windSpeed : field.curSpeed;
+  const uField = kind === 'wind' ? field.windU : kind === 'current' ? field.curU : field.waveU;
+  const vField = kind === 'wind' ? field.windV : kind === 'current' ? field.curV : field.waveV;
+  const sField = kind === 'wind' ? field.windSpeed : kind === 'current' ? field.curSpeed : field.waveHeight;
 
   const w00 = (1 - fc) * (1 - fr), w10 = fc * (1 - fr), w01 = (1 - fc) * fr, w11 = fc * fr;
   const i00 = idx(r0, c0), i10 = idx(r0, c1), i01 = idx(r1, c0), i11 = idx(r1, c1);
@@ -169,13 +187,14 @@ function stepAndDraw() {
       continue;
     }
 
-    const pxPerFrame = Math.min(MAX_PX_PER_FRAME, Math.max(MIN_PX_PER_FRAME, sample.speed * 0.35));
+    const speedScale = p.kind === 'wave' ? WAVE_SPEED_SCALE : FLOW_SPEED_SCALE;
+    const pxPerFrame = Math.min(MAX_PX_PER_FRAME, Math.max(MIN_PX_PER_FRAME, sample.speed * speedScale));
     const afterX = before.x + sample.dx * pxPerFrame;
     const afterY = before.y - sample.dy * pxPerFrame; // canvas y grows downward, north is up
     const afterLatLng = state.map.containerPointToLatLng([afterX, afterY]);
 
-    const color = p.kind === 'wind' ? WIND_COLOR : CURRENT_COLOR;
-    const coreWidth = p.kind === 'wind' ? 2.0 : 1.7;
+    const color = p.kind === 'wind' ? WIND_COLOR : p.kind === 'current' ? CURRENT_COLOR : WAVE_COLOR;
+    const coreWidth = p.kind === 'wind' ? 2.0 : p.kind === 'current' ? 1.7 : 1.5;
 
     // Cheap glow: a wide, faint halo stroke under a thin, bright core —
     // reads as a soft neon streak without the cost of real shadow blur at
@@ -211,7 +230,8 @@ export function initParticleField() {
 
   particles = [
     ...Array.from({ length: WIND_PARTICLE_COUNT }, () => makeParticle('wind')),
-    ...Array.from({ length: CURRENT_PARTICLE_COUNT }, () => makeParticle('current'))
+    ...Array.from({ length: CURRENT_PARTICLE_COUNT }, () => makeParticle('current')),
+    ...Array.from({ length: WAVE_PARTICLE_COUNT }, () => makeParticle('wave'))
   ];
 
   state.map.on('moveend', () => {

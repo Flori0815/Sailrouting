@@ -134,12 +134,19 @@ After that first setup, every merge to `main` redeploys automatically.
   behavior); in one measured case a dead-upwind leg went from 7.07h
   (single pass) to 3.18h (3 passes) — close to the theoretical optimal
   tacking VMG time — by escaping suboptimal choices baked in by the
-  single-pass sector-binning search.
+  single-pass sector-binning search. A later pass's narrower, reference-biased
+  fan can fail to find any path at all (e.g. biased toward a hazard); when
+  that happens `solveIsochronePassageRefined` falls back to the last
+  successful pass instead of discarding it — a refinement pass must never
+  make the result worse than not refining.
 - **Wave height & direction**: `metocean.js`'s existing marine-API call
   also requests `wave_height`/`wave_direction` (no extra request — bundled
   into the current/wave fetch), threaded through every isochrone node and
   leg alongside wind/current, and shown in the weather HUD and each leg
-  card.
+  card. The animated overlay (`particleField.js`) also drives a third
+  violet particle stream from this same live data, alongside the existing
+  wind and current streams — visual confirmation, not just numbers, that
+  wave conditions are genuinely live and feeding the solver.
 - **Wellenempfindlichkeit (wave sensitivity)**: a 0-100% slider (Isochronen
   tab, default 50%) controls `waves.js#getWaveSpeedFactor`, which reduces
   boat speed by wave height (scaled up to a 2.5m reference height) and by

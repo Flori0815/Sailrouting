@@ -132,7 +132,7 @@ export async function solveIsochronePassage(fromCoord, toCoord, startTime, confi
         if (twa < NO_GO_ANGLE_DEG) continue;
 
         const waveFactor = getWaveSpeedFactor(met.waveHeight, met.waveDir, heading, config.waveSensitivity);
-        const stw = getDehlerBoatSpeed(twa, met.tws) * waveFactor;
+        const stw = +(getDehlerBoatSpeed(twa, met.tws) * waveFactor).toFixed(2);
 
         // Current triangle: V_ground = V_boat + V_current
         const hRad = heading * Math.PI / 180;
@@ -282,7 +282,7 @@ export async function solveIsochronePassage(fromCoord, toCoord, startTime, confi
     let finalTwa = Math.abs(last.twd - finalBrg) % 360;
     if (finalTwa > 180) finalTwa = 360 - finalTwa;
     const finalWaveFactor = getWaveSpeedFactor(last.waveHeight, last.waveDir, finalBrg, config.waveSensitivity);
-    const finalStw = getDehlerBoatSpeed(finalTwa, last.tws) * finalWaveFactor;
+    const finalStw = +(getDehlerBoatSpeed(finalTwa, last.tws) * finalWaveFactor).toFixed(2);
 
     const hRad = finalBrg * Math.PI / 180;
     const cRad = last.curDir * Math.PI / 180;
@@ -328,7 +328,7 @@ export async function solveIsochronePassage(fromCoord, toCoord, startTime, confi
 export async function solveIsochronePassageRefined(fromCoord, toCoord, startTime, config, avoidZones, passes = 1) {
   const totalPasses = Math.max(1, Math.min(3, Math.round(passes)));
   let referencePath = null;
-  let result = null;
+  let bestResult = null;
 
   for (let pass = 0; pass < totalPasses; pass++) {
     const passConfig = pass === 0
@@ -340,11 +340,19 @@ export async function solveIsochronePassageRefined(fromCoord, toCoord, startTime
           numSectors: Math.min(96, config.numSectors * 2)
         };
 
-    result = await solveIsochronePassage(fromCoord, toCoord, startTime, passConfig, avoidZones, referencePath);
-    if (!result || !result.pathNodes || result.pathNodes.length < 2) return result;
+    const result = await solveIsochronePassage(fromCoord, toCoord, startTime, passConfig, avoidZones, referencePath);
+    if (!result || !result.pathNodes || result.pathNodes.length < 2) {
+      // This refinement pass's narrower, reference-biased fan failed to
+      // find a path (e.g. it got biased toward a hazard) — keep whatever
+      // the previous pass already found instead of discarding a working
+      // route. A refinement pass must never make the result worse than
+      // not refining at all.
+      break;
+    }
 
+    bestResult = result;
     referencePath = result.pathNodes.map(n => ({ timeHours: n.timeHours, heading: n.heading }));
   }
 
-  return result;
+  return bestResult;
 }
