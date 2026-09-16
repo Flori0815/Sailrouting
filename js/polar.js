@@ -33,6 +33,16 @@ export function getDehlerBoatSpeed(twa, tws) {
   if (angle < NO_GO_ANGLE_DEG) return 0.2;
   if (wind < 3) return 0.5;
 
+  // Below the table's lowest tabulated wind speed: ramp linearly from the
+  // near-calm floor up to the 6kn-column performance, rather than falling
+  // through to the bracket search below with no matching bracket (both
+  // indices would resolve to entry 0, dividing by zero and producing NaN).
+  if (wind < POLAR_TWS[0]) {
+    const speedAtMin = getDehlerBoatSpeed(twa, POLAR_TWS[0]);
+    const factor = (wind - 3) / (POLAR_TWS[0] - 3);
+    return +(0.5 + factor * (speedAtMin - 0.5)).toFixed(2);
+  }
+
   let s0 = 0, s1 = 0;
   for (let i = 0; i < POLAR_TWS.length - 1; i++) {
     if (wind >= POLAR_TWS[i] && wind <= POLAR_TWS[i + 1]) {

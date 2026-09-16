@@ -146,6 +146,33 @@ After that first setup, every merge to `main` redeploys automatically.
   continuing with an empty one (which previously crashed reading
   `.distToGoal` off `undefined` — reproduced in ~12% of randomized
   fuzz trials with 2-3 refinement passes before the fix, 0% after).
+- **Fixed: refinement producing a bare straight line ("no real routing")**.
+  Two independent bugs combined to make this possible, both found by fuzzing
+  (random wind/current/wave/geometry/config combinations, replaying the
+  exact failing trial to pin down the cause): (1) `polar.js#getDehlerBoatSpeed`
+  divided by zero — and silently returned `NaN` — for any wind speed between
+  3kn and the polar table's lowest tabulated entry (6kn), since neither
+  bracket-matching loop covers that gap; that `NaN` then survived every
+  downstream rejection check in the solver, because a `NaN` always makes
+  `<`/`<=`/`>`/`>=` comparisons evaluate `false`, so guards written as
+  `if (x <= limit) continue;` never catch it. Fixed by ramping linearly from
+  the near-calm floor up to the 6kn column instead of falling through to the
+  (non-matching) bracket search. (2) The loop-prevention spatial-dominance
+  grid pre-seeded the start point's own ~0.8nm cell at time 0; with a fine
+  time step (now down to 2 min) a boat's very first hop can be shorter than
+  one cell and land back inside it — a perfectly normal small step, not a
+  loop — but the check (`storedTime <= arrivalTime + 0.05`) always rejected
+  it, since the stored `0` is `<=` any positive arrival time. That could
+  silently fail every candidate on step one, killing the whole leg (the
+  existing "did the search actually advance" guard then correctly reported
+  no route rather than faking a straight line, but a real, findable route
+  was lost). Fixed by not seeding the origin's own cell — genuine
+  backtracking to the start is already rejected by the strict
+  forward-progression check. Verified with 300-trial fuzzing runs (two
+  seeds) at 0 thrown exceptions and 0 degenerate 2-node results, both
+  before and after, plus a real-browser check confirming a previously
+  no-route leg (Cuxhaven → Elbe 1 under a light, non-tabulated wind speed)
+  now returns a proper multi-node route.
 - **Wave height & direction**: `metocean.js`'s existing marine-API call
   also requests `wave_height`/`wave_direction` (no extra request — bundled
   into the current/wave fetch), threaded through every isochrone node and

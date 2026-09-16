@@ -80,7 +80,14 @@ export async function solveIsochronePassage(fromCoord, toCoord, startTime, confi
     const kLon = Math.floor(lon * (75 * Math.cos(lat * Math.PI / 180)));
     return `${kLat}_${kLon}`;
   }
-  spatialGrid.set(getCellKey(fromCoord[0], fromCoord[1]), 0);
+  // Deliberately not seeding the origin's own cell here. With a fine time
+  // step (down to 2 min) a boat's first hop can easily be shorter than one
+  // ~0.8nm cell, landing back inside the start's cell — a perfectly normal
+  // small forward step, not a loop. Seeding it at time 0 would reject every
+  // such candidate (the stored value 0 is always <= any positive arrival
+  // time + 0.05), stalling the whole search on step one. The strict
+  // forward-progression check below already rejects genuine backtracking
+  // to the origin.
 
   const sampledRays = [];
   const cleanWavefronts = [];
@@ -285,7 +292,18 @@ export async function solveIsochronePassage(fromCoord, toCoord, startTime, confi
   }
 
   if (!arrivalNode && frontier.length > 0) {
-    arrivalNode = frontier.reduce((min, n) => n.distToGoal < min.distToGoal ? n : min, frontier[0]);
+    // Only accept this as an arrival if the search actually advanced at
+    // least one real step (every real candidate has a parent; the untouched
+    // initial frontier's single placeholder node does not). Otherwise the
+    // final-connector logic below would draw one straight line from start
+    // directly to the target — ignoring wind, tacking, and hazards
+    // entirely — and silently report that as a "successful" route. This is
+    // exactly what a refinement pass's narrowed, reference-biased fan can
+    // do when it fails to find any valid candidate on the very first step.
+    const hasAdvanced = frontier.some(n => n.parent !== null);
+    if (hasAdvanced) {
+      arrivalNode = frontier.reduce((min, n) => n.distToGoal < min.distToGoal ? n : min, frontier[0]);
+    }
   }
 
   if (!arrivalNode) return null;
