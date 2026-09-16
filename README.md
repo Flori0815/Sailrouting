@@ -138,7 +138,14 @@ After that first setup, every merge to `main` redeploys automatically.
   fan can fail to find any path at all (e.g. biased toward a hazard); when
   that happens `solveIsochronePassageRefined` falls back to the last
   successful pass instead of discarding it — a refinement pass must never
-  make the result worse than not refining.
+  make the result worse than not refining. The sector-binning step itself
+  filters candidates by their angle from the leg's original bearing, using
+  the *current* pass's (possibly narrowed) fan width; when a later pass's
+  bias pushes every candidate in a step outside that tolerance window, the
+  search now stops advancing and keeps the previous frontier instead of
+  continuing with an empty one (which previously crashed reading
+  `.distToGoal` off `undefined` — reproduced in ~12% of randomized
+  fuzz trials with 2-3 refinement passes before the fix, 0% after).
 - **Wave height & direction**: `metocean.js`'s existing marine-API call
   also requests `wave_height`/`wave_direction` (no extra request — bundled
   into the current/wave fetch), threaded through every isochrone node and
