@@ -40,3 +40,20 @@ html, body {
 .crosshair-cursor {
   cursor: crosshair !important;
 }
+
+.leaflet-tooltip {
+  background: rgba(11, 19, 41, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #e2e8f0;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  box-shadow: none;
+}
+.leaflet-tooltip-top::before {
+  border-top-color: rgba(11, 19, 41, 0.92);
+}
+.leaflet-tooltip-bottom::before {
+  border-bottom-color: rgba(11, 19, 41, 0.92);
+}

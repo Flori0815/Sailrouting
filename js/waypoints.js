@@ -1,6 +1,7 @@
 import { state } from './state.js';
 import { showToast } from './ui.js';
 import { clearIsochroneLayers } from './mapLayers.js';
+import { clearDepartureVariants } from './departureWindow.js';
 
 function buildWaypointIcon(label, isStart) {
   return L.divIcon({
@@ -53,6 +54,7 @@ export function clearAllWaypoints() {
   state.waypoints.forEach(w => state.map.removeLayer(w.marker));
   state.waypoints = [];
   clearIsochroneLayers();
+  clearDepartureVariants();
   renderWaypointList();
   showToast('Alle Wegpunkte gelöscht', 'sky');
 }

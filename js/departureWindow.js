@@ -34,6 +34,69 @@ function setBusy(busy) {
   btn.classList.toggle('cursor-not-allowed', busy);
 }
 
+// Color-codes a candidate's route line by how far its offset sits from the
+// planned time: cooler/bluer for earlier departures, warmer/amber for
+// later ones, with the fastest candidate always drawn in solid emerald.
+function colorForCandidate(offset, isBest) {
+  if (isBest) return '#10b981';
+  if (offset < 0) {
+    const t = Math.min(1, Math.abs(offset) / 6);
+    return `hsl(${210 + t * 40}, 75%, 62%)`;
+  }
+  if (offset > 0) {
+    const t = Math.min(1, offset / 6);
+    return `hsl(${45 - t * 25}, 90%, 58%)`;
+  }
+  return '#94a3b8';
+}
+
+export function clearDepartureVariants() {
+  if (state.departureVariantLayerGroup) {
+    state.departureVariantLayerGroup.clearLayers();
+    state.map.removeLayer(state.departureVariantLayerGroup);
+  }
+}
+
+function renderDepartureVariantsOnMap(candidates, bestOffset) {
+  clearDepartureVariants();
+  if (!state.departureVariantLayerGroup) {
+    state.departureVariantLayerGroup = L.layerGroup();
+  }
+  state.departureVariantLayerGroup.addTo(state.map);
+
+  candidates
+    .filter(c => c.result)
+    .forEach(({ offset, departureTime, result }) => {
+      const isBest = offset === bestOffset;
+      const line = L.polyline(result.routePoints, {
+        color: colorForCandidate(offset, isBest),
+        weight: isBest ? 3 : 2,
+        opacity: isBest ? 0.9 : 0.55,
+        dashArray: isBest ? null : '5, 6'
+      });
+      line.bindTooltip(
+        `${formatOffset(offset)} · ${departureTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} — ${formatDuration(result.totalHours)}, ETA ${result.arrivalTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+        { sticky: true }
+      );
+      line.addTo(state.departureVariantLayerGroup);
+    });
+}
+
+// Cache of the last search's candidates so the "show all variants" checkbox
+// can be toggled on/off without re-running the (expensive) route search.
+let lastCandidates = [];
+
+export function toggleDepartureVariantsOnMap(show) {
+  if (!show) {
+    clearDepartureVariants();
+    return;
+  }
+  const viable = lastCandidates.filter(c => c.result);
+  if (viable.length === 0) return;
+  const best = [...viable].sort((a, b) => a.result.totalHours - b.result.totalHours)[0];
+  renderDepartureVariantsOnMap(lastCandidates, best.offset);
+}
+
 export async function findBestDepartureTime() {
   if (state.waypoints.length < 2) {
     showToast('Bitte mindestens Start und Ziel setzen.', 'amber');
@@ -53,6 +116,7 @@ export async function findBestDepartureTime() {
   const config = readOptimizerConfig();
   const resultsContainer = document.getElementById('departureWindowResults');
   resultsContainer.innerHTML = '';
+  clearDepartureVariants();
   setBusy(true);
 
   const candidates = [];
@@ -82,7 +146,11 @@ export async function findBestDepartureTime() {
   viable.sort((a, b) => a.result.totalHours - b.result.totalHours);
   const best = viable[0];
 
+  lastCandidates = candidates;
   renderDepartureWindowResults(candidates, best.offset);
+  if (document.getElementById('checkShowAllDepartureVariants').checked) {
+    renderDepartureVariantsOnMap(candidates, best.offset);
+  }
   showToast(`Beste Abfahrt: ${formatOffset(best.offset)} (${formatDuration(best.result.totalHours)})`, 'emerald');
 }
 
