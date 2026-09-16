@@ -1,5 +1,29 @@
 import { POLAR_TWS, POLAR_TWA, DEHLER37_POLAR, NO_GO_ANGLE_DEG } from './constants.js';
 
+// Leeway coefficient for the standard small-craft rule-of-thumb estimate
+// leeway ≈ K × TWS / STW², tuned so a typical close-hauled case (15kn
+// wind, ~6kn boat speed) lands around 4-6°, in line with published
+// cruising-monohull leeway figures.
+const LEEWAY_COEFFICIENT = 15;
+const MAX_LEEWAY_DEG = 12;
+// Leeway (heeling-driven sideways slip) matters close-hauled/reaching and
+// is negligible once the sail force is mostly driving the boat forward
+// rather than pressing it sideways — tapers to zero by this TWA.
+const LEEWAY_TAPER_TWA = 100;
+
+// Estimates leeway — the sideways slip of the hull through the water
+// caused by wind pressure on the sails, distinct from current set/drift.
+// Returns a positive angle in degrees; the caller applies it toward the
+// leeward side of the boat's steered heading.
+export function getLeewayAngle(twa, tws, stw) {
+  const angle = Math.min(180, Math.max(0, Math.abs(twa)));
+  if (angle >= LEEWAY_TAPER_TWA || stw <= 0) return 0;
+
+  const raw = (LEEWAY_COEFFICIENT * Math.max(0, tws)) / (stw * stw);
+  const pointOfSailFactor = 1 - angle / LEEWAY_TAPER_TWA;
+  return +Math.min(MAX_LEEWAY_DEG, raw * pointOfSailFactor).toFixed(1);
+}
+
 // Bilinear interpolation over the Dehler 37 CR polar performance matrix.
 // Returns boat speed through water (STW, in knots) for a given true wind angle and speed.
 export function getDehlerBoatSpeed(twa, tws) {

@@ -56,7 +56,8 @@ function buildLegCard(leg) {
     ['Wind: ', `${leg.tws}k @ ${leg.twd}°`, 'text-sky-300'],
     ['TWA: ', `${leg.twa}°`, 'text-sky-300'],
     ['Strom: ', `${leg.currentSpeed}k → ${leg.currentDir}°`, 'text-emerald-300'],
-    ['Welle: ', `${leg.waveHeight ?? '–'}m @ ${leg.waveDir ?? '–'}°`, 'text-violet-300']
+    ['Welle: ', `${leg.waveHeight ?? '–'}m @ ${leg.waveDir ?? '–'}°`, 'text-violet-300'],
+    ['Abtrift: ', `${leg.leewayDeg ?? 0}°`, 'text-amber-300']
   ];
 
   cells.forEach(([label, value, strongClass]) => {
