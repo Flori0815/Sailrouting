@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Dehler 37 CR Weather Router - Clean Frontier Engine</title>
+  <meta name="description" content="Isochronen-Wetterrouter für die Dehler 37 CR: Live-Wind- und Stromdaten, Polardiagramm-basierte VMG-Optimierung und Gefahrenzonen-Umfahrung, komplett im Browser.">
+  <meta name="theme-color" content="#030712">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpolygon points='12 2 19 21 12 17 5 21 12 2' fill='%2338bdf8'/%3E%3C/svg%3E">
+
+  <!-- Tailwind CSS (CDN, JIT in-browser — no build step, matches this project's no-backend/no-bundler goal) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="js/tailwind-config.js"></script>
+
+  <!-- Leaflet Map CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="text-slate-100 flex flex-col relative select-none">
+
+  <div id="map" role="application" aria-label="Seekarte"></div>
+
+  <!-- Top Floating Header Bar -->
+  <header class="absolute top-2 left-2 right-2 md:left-4 md:right-4 z-20 flex items-center justify-between pointer-events-none">
+    <div class="pointer-events-auto glass-panel px-3 py-1.5 md:px-4 md:py-2 rounded-2xl shadow-2xl flex items-center gap-2 border border-slate-700/80">
+      <div class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></div>
+      <div class="flex flex-col">
+        <div class="flex items-center gap-1.5">
+          <span class="font-bold text-xs md:text-sm tracking-wide text-white">Dehler 37 CR</span>
+          <span class="text-[9px] bg-sky-500/20 text-sky-300 font-semibold px-1.5 py-0.2 rounded border border-sky-400/30">Isochrone Router</span>
+        </div>
+        <span class="text-[9px] md:text-[10px] text-slate-400 font-mono" id="topStatusTime">Loop-Free Strict VMG Engine</span>
+      </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="pointer-events-auto flex items-center gap-1.5 md:gap-2">
+      <!-- Presets Selector -->
+      <label class="sr-only" for="quickPresetSelector">Revier-Preset wählen</label>
+      <select id="quickPresetSelector" class="glass-panel text-xs text-sky-200 border border-slate-700/80 rounded-xl px-2 py-2 shadow-lg focus:outline-none focus:border-sky-400 cursor-pointer max-w-[140px] sm:max-w-none">
+        <option value="helgoland">⚓ Cuxhaven → Helgoland</option>
+        <option value="kiel">⚓ Kiel → Marstal (Ostsee)</option>
+        <option value="solent">⚓ Solent Round Island</option>
+        <option value="sfbay">⚓ San Francisco Bay</option>
+      </select>
+
+      <!-- Isochrone Toggle -->
+      <button id="btnToggleIsochrones" title="Isochronen-Wellen ein/ausblenden" aria-label="Isochronen-Wellen ein/ausblenden" class="glass-panel p-2 md:px-3 md:py-2 rounded-xl text-sky-300 hover:text-white shadow-lg border border-slate-700/80 flex items-center gap-1.5 active:scale-95 transition-transform">
+        <i data-lucide="git-fork" class="w-4 h-4 text-sky-400"></i>
+        <span class="hidden md:inline text-xs font-medium">Frontier</span>
+        <span id="isochroneIndicator" class="w-2 h-2 rounded-full bg-sky-400"></span>
+      </button>
+
+      <!-- OpenSeaMap Toggle -->
+      <button id="btnToggleSeamarks" title="Seezeichen ein/ausblenden" aria-label="Seezeichen ein/ausblenden" class="glass-panel p-2 md:px-3 md:py-2 rounded-xl text-sky-300 hover:text-white shadow-lg border border-slate-700/80 flex items-center gap-1.5 active:scale-95 transition-transform">
+        <i data-lucide="anchor" class="w-4 h-4 text-sky-400"></i>
+        <span class="hidden md:inline text-xs font-medium">Betonnung</span>
+        <span id="seamarksIndicator" class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+      </button>
+
+      <!-- Optimize CTA -->
+      <button id="btnQuickOptimize" class="bg-gradient-to-r from-sky-500 via-teal-400 to-emerald-400 hover:from-sky-400 hover:to-emerald-300 text-slate-950 font-bold px-3 py-2 md:px-4 md:py-2 rounded-xl text-xs md:text-sm shadow-xl shadow-sky-500/20 flex items-center gap-1.5 active:scale-95 transition-transform">
+        <i data-lucide="play" class="w-4 h-4 fill-current"></i>
+        <span>Route berechnen</span>
+      </button>
+
+      <!-- Sidebar Drawer Toggle -->
+      <button id="btnToggleSidebar" aria-label="Menü öffnen" class="glass-panel p-2 md:p-2.5 rounded-xl text-slate-200 hover:text-white shadow-lg border border-slate-700/80 active:scale-95 transition-transform">
+        <i data-lucide="menu" class="w-5 h-5 text-sky-400"></i>
+      </button>
+    </div>
+  </header>
+
+  <div id="metoceanHud" class="absolute top-16 left-2 md:left-4 z-20 pointer-events-auto transition-all duration-300">
+    <div class="glass-panel rounded-2xl p-2.5 md:p-3 shadow-2xl border border-slate-700/80 w-64 md:w-72">
+      <div class="flex items-center justify-between pb-1.5 border-b border-slate-700/50">
+        <span class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+          <i data-lucide="wind" class="w-3.5 h-3.5 text-sky-400"></i>
+          Wetter & Gezeitenstrom
+        </span>
+        <button id="btnMinimizeHud" aria-label="Wetter-HUD ein-/ausklappen" class="text-slate-400 hover:text-white p-0.5 rounded">
+          <i data-lucide="chevron-up" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+      <div id="hudBody" class="grid grid-cols-2 gap-2 pt-2 text-xs">
+        <div class="bg-marine-900/80 p-1.5 rounded-lg border border-slate-800">
+          <div class="text-[10px] text-slate-400">Wahrer Wind (TWS/D)</div>
+          <div class="font-mono font-bold text-sky-300 flex items-center gap-1">
+            <span id="hudTws">14.0</span> kn
+            <span id="hudTwdArrow" class="inline-block transform transition-transform">↓</span>
+            <span id="hudTwd" class="text-slate-300 text-[10px]">240°</span>
+          </div>
+        </div>
+
+        <div class="bg-marine-900/80 p-1.5 rounded-lg border border-slate-800">
+          <div class="text-[10px] text-slate-400">Gezeitenstrom</div>
+          <div class="font-mono font-bold text-emerald-400 flex items-center gap-1">
+            <span id="hudCurSpeed">0.9</span> kn
+            <span id="hudCurArrow" class="inline-block transform transition-transform">→</span>
+            <span id="hudCurDir" class="text-slate-300 text-[10px]">120°</span>
+          </div>
+        </div>
+
+        <div class="bg-marine-900/80 p-1.5 rounded-lg border border-slate-800">
+          <div class="text-[10px] text-slate-400">Dehler STW (FdW)</div>
+          <div class="font-mono font-bold text-amber-300">
+            <span id="hudStw">6.4</span> kn
+          </div>
+        </div>
+
+        <div class="bg-marine-900/80 p-1.5 rounded-lg border border-slate-800">
+          <div class="text-[10px] text-slate-400">Ground Speed (FgG)</div>
+          <div class="font-mono font-bold text-white">
+            <span id="hudSog">6.8</span> kn
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Voyage Timeline Scrubber -->
+  <div id="timelineContainer" class="absolute bottom-3 left-2 right-2 md:left-1/4 md:right-1/4 z-20 pointer-events-auto transition-all duration-300">
+    <div class="glass-panel px-3 py-2 md:px-4 md:py-2.5 rounded-2xl shadow-2xl border border-slate-700/80 space-y-1.5">
+      <div class="flex items-center justify-between text-xs">
+        <div class="flex items-center gap-2">
+          <button id="btnPlayVoyage" aria-label="Törn-Simulation abspielen/pausieren" class="bg-sky-500 hover:bg-sky-400 text-slate-950 p-1.5 rounded-lg active:scale-95 transition-transform font-bold">
+            <i data-lucide="play" class="w-3.5 h-3.5"></i>
+          </button>
+          <span class="font-mono text-slate-300 text-[11px]" id="simTimeLabel">Abfahrt: +00h 00m</span>
+        </div>
+        <div class="text-[11px] text-emerald-400 font-mono" id="simProgressPct">0% absolviert</div>
+      </div>
+      <label class="sr-only" for="voyageScrubber">Törn-Fortschritt</label>
+      <input id="voyageScrubber" type="range" min="0" max="100" value="0" step="0.5" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-400">
+    </div>
+  </div>
+
+  <div id="sidebarBackdrop" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 opacity-0 pointer-events-none transition-opacity duration-300"></div>
+
+  <aside id="sidebar" class="fixed inset-y-0 left-0 w-full sm:w-96 md:w-[460px] bg-marine-950/95 border-r border-slate-800 z-40 transform -translate-x-full transition-transform duration-300 ease-out flex flex-col shadow-2xl">
+
+    <div class="p-3.5 border-b border-slate-800 flex items-center justify-between bg-marine-900/60">
+      <div class="flex items-center gap-2">
+        <i data-lucide="compass" class="w-5 h-5 text-sky-400"></i>
+        <h2 class="font-bold text-sm md:text-base text-white">Dehler 37 CR Navigator</h2>
+      </div>
+      <button id="btnCloseSidebar" aria-label="Menü schließen" class="p-1.5 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white transition-colors">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <div class="flex border-b border-slate-800 bg-marine-900/30 text-xs font-medium" role="tablist">
+      <button id="tabBtnWaypoints" role="tab" aria-selected="true" class="flex-1 py-2.5 text-center text-sky-400 border-b-2 border-sky-400 font-bold transition-colors">
+        Wegpunkte
+      </button>
+      <button id="tabBtnIsochrone" role="tab" aria-selected="false" class="flex-1 py-2.5 text-center text-slate-400 hover:text-slate-200 border-b-2 border-transparent transition-colors">
+        Isochronen
+      </button>
+      <button id="tabBtnPolars" role="tab" aria-selected="false" class="flex-1 py-2.5 text-center text-slate-400 hover:text-slate-200 border-b-2 border-transparent transition-colors">
+        Polare
+      </button>
+      <button id="tabBtnHazards" role="tab" aria-selected="false" class="flex-1 py-2.5 text-center text-slate-400 hover:text-slate-200 border-b-2 border-transparent transition-colors">
+        Untiefen
+      </button>
+      <button id="tabBtnResults" role="tab" aria-selected="false" class="flex-1 py-2.5 text-center text-slate-400 hover:text-slate-200 border-b-2 border-transparent transition-colors">
+        Legs
+      </button>
+    </div>
+
+    <!-- Tab 1: Waypoints -->
+    <div id="waypointsTab" class="flex-1 flex flex-col overflow-hidden p-3 gap-2.5">
+      <div class="bg-marine-800/80 px-2.5 py-2 rounded-xl border border-slate-700 text-xs space-y-1">
+        <div class="flex items-center justify-between text-slate-300">
+          <span class="flex items-center gap-1.5 font-medium">
+            <i data-lucide="sliders" class="w-3.5 h-3.5 text-sky-400"></i> Routing-Strategie:
+          </span>
+        </div>
+        <label class="sr-only" for="routingStrategy">Routing-Strategie</label>
+        <select id="routingStrategy" class="w-full text-xs bg-marine-900 text-sky-300 border border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:border-sky-400 cursor-pointer">
+          <option value="fastest">⚡ Schnellste ETA (Strict Isochrone Frontier)</option>
+          <option value="comfort">⛵ Komfort (Weniger Wenden, min. 44° TWA)</option>
+          <option value="shortest">📏 Kürzeste fahrbare Distanz</option>
+        </select>
+      </div>
+
+      <div class="flex items-center justify-between bg-marine-800/80 px-2.5 py-1.5 rounded-xl border border-slate-700 text-xs">
+        <span class="text-slate-300 flex items-center gap-1.5">
+          <i data-lucide="calendar" class="w-3.5 h-3.5 text-sky-400"></i> Abfahrt:
+        </span>
+        <label class="sr-only" for="departureTime">Abfahrtszeit</label>
+        <input id="departureTime" type="datetime-local" class="bg-marine-900 text-sky-300 border border-slate-700 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-sky-400">
+      </div>
+
+      <div class="grid grid-cols-2 gap-2">
+        <button id="btnAddWpMode" class="bg-slate-800 hover:bg-slate-700 text-sky-400 font-semibold py-2 px-3 rounded-xl text-xs border border-sky-500/30 flex items-center justify-center gap-1.5 active:scale-95 transition-transform">
+          <i data-lucide="map-pin" class="w-3.5 h-3.5"></i>
+          <span>Punkt setzen</span>
+        </button>
+        <button id="btnClearWps" class="bg-slate-800 hover:bg-slate-700 text-rose-400 font-semibold py-2 px-3 rounded-xl text-xs border border-rose-500/30 flex items-center justify-center gap-1.5 active:scale-95 transition-transform">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+          <span>Alle löschen</span>
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto space-y-1.5 pr-1" id="waypointList"></div>
+
+      <div class="pt-2 border-t border-slate-800">
+        <button id="btnRunOptimizer" class="w-full bg-gradient-to-r from-sky-500 via-teal-400 to-emerald-400 text-slate-950 font-bold py-2.5 rounded-xl shadow-lg shadow-sky-500/25 flex items-center justify-center gap-2 active:scale-95 transition-transform text-sm">
+          <i data-lucide="play" class="w-4 h-4 fill-current"></i>
+          <span>Isochrone Route berechnen</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Tab 2: Isochrone Engine Parameters -->
+    <div id="isochroneTab" class="flex-1 hidden flex-col overflow-y-auto p-3 space-y-3">
+      <div class="bg-marine-900/80 p-3 rounded-xl border border-slate-800 space-y-1.5">
+        <div class="flex items-center justify-between text-xs">
+          <span class="font-bold text-white flex items-center gap-1.5">
+            <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i>
+            Loop-Free Spatial Dominance
+          </span>
+          <span class="text-xs bg-emerald-500/20 text-emerald-300 font-mono px-2 py-0.5 rounded">Active Protection</span>
+        </div>
+        <p class="text-[11px] text-slate-400 leading-relaxed">
+          Verhindert Rückwärts-Schlingen durch ein Spatial-Grid: Gebiete, die zu einer früheren Zeit erreicht wurden, werden für spätere Isochronen gesperrt.
+        </p>
+      </div>
+
+      <div class="bg-marine-900/80 p-3 rounded-xl border border-slate-800 space-y-3 text-xs">
+        <div>
+          <div class="flex justify-between text-slate-300 mb-1">
+            <span id="stepTimeSliderLabel">Zeitschritt (&Delta;t):</span>
+            <span class="font-mono text-sky-400 font-bold" id="stepTimeLabel">20 min</span>
+          </div>
+          <input id="stepTimeSlider" type="range" min="5" max="45" value="20" step="5" aria-labelledby="stepTimeSliderLabel" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-400">
+        </div>
+
+        <div>
+          <div class="flex justify-between text-slate-300 mb-1">
+            <span id="fanWidthSliderLabel">Fächerbreite (Fan Width):</span>
+            <span class="font-mono text-sky-400 font-bold" id="fanWidthLabel">&plusmn;55&deg;</span>
+          </div>
+          <input id="fanWidthSlider" type="range" min="30" max="75" value="55" step="5" aria-labelledby="fanWidthSliderLabel" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-400">
+        </div>
+
+        <div>
+          <div class="flex justify-between text-slate-300 mb-1">
+            <span id="raysPerNodeSliderLabel">Strahlen pro Knoten:</span>
+            <span class="font-mono text-sky-400 font-bold" id="raysPerNodeLabel">11 Strahlen</span>
+          </div>
+          <input id="raysPerNodeSlider" type="range" min="7" max="19" value="11" step="2" aria-labelledby="raysPerNodeSliderLabel" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-400">
+        </div>
+
+        <div>
+          <div class="flex justify-between text-slate-300 mb-1">
+            <span id="sectorBinsSliderLabel">Wellenfront-Sektoren:</span>
+            <span class="font-mono text-sky-400 font-bold" id="sectorBinsLabel">24 Sektoren</span>
+          </div>
+          <input id="sectorBinsSlider" type="range" min="16" max="48" value="24" step="4" aria-labelledby="sectorBinsSliderLabel" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-400">
+        </div>
+
+        <div class="flex items-center justify-between pt-2 border-t border-slate-800">
+          <label class="text-slate-300" for="checkShowWavefronts">Wellenfronten einblenden:</label>
+          <input id="checkShowWavefronts" type="checkbox" checked class="w-4 h-4 rounded text-sky-500 focus:ring-0 cursor-pointer">
+        </div>
+
+        <div class="flex items-center justify-between">
+          <label class="text-slate-300" for="checkShowRays">Such-Strahlenbaum anzeigen:</label>
+          <input id="checkShowRays" type="checkbox" checked class="w-4 h-4 rounded text-sky-500 focus:ring-0 cursor-pointer">
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 3: Dehler 37 CR Polars -->
+    <div id="polarsTab" class="flex-1 hidden flex-col overflow-y-auto p-3 space-y-3">
+      <div class="bg-marine-900/80 p-3 rounded-xl border border-slate-800 space-y-2">
+        <div class="flex items-center justify-between text-xs">
+          <span class="font-bold text-white flex items-center gap-1.5">
+            <i data-lucide="gauge" class="w-4 h-4 text-sky-400"></i>
+            Dehler 37 CR Polardiagramm
+          </span>
+          <span class="text-emerald-400 font-mono font-bold" id="polarTwsLabel">16 kn Wind</span>
+        </div>
+        <div class="space-y-1">
+          <div class="flex justify-between text-[11px] text-slate-400">
+            <span id="polarTwsSliderLabel">Wahre Windstärke (TWS):</span>
+            <span class="font-mono text-sky-400 font-bold" id="polarTwsSliderVal">16 kn</span>
+          </div>
+          <input id="polarTwsSlider" type="range" min="6" max="25" value="16" aria-labelledby="polarTwsSliderLabel" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-400">
+        </div>
+      </div>
+
+      <div class="relative bg-marine-900/90 rounded-xl border border-slate-800 p-2 flex flex-col items-center justify-center">
+        <canvas id="polarCanvas" width="320" height="320" class="max-w-full h-auto" role="img" aria-label="Polardiagramm der Bootsgeschwindigkeit nach Windwinkel"></canvas>
+        <div class="flex items-center justify-around w-full mt-2 text-[10px] text-slate-400 font-mono">
+          <div>Am Wind VMG: <span class="text-sky-300 font-bold" id="upwindVmgVal">5.3 kn @ 42&deg;</span></div>
+          <div>Raumschots VMG: <span class="text-emerald-300 font-bold" id="downwindVmgVal">6.5 kn @ 145&deg;</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 4: Hazards & Shallows -->
+    <div id="hazardsTab" class="flex-1 hidden flex-col overflow-y-auto p-3 space-y-2.5">
+      <div class="bg-marine-900/80 p-3 rounded-xl border border-slate-800 space-y-2">
+        <div class="flex items-center justify-between text-xs">
+          <span class="font-bold text-white flex items-center gap-1.5">
+            <i data-lucide="shield-alert" class="w-4 h-4 text-rose-400"></i>
+            Sperrgebiete & Flachwasser
+          </span>
+          <span class="text-[10px] bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded font-mono" id="zoneCountBadge">0 Aktiv</span>
+        </div>
+        <p class="text-[11px] text-slate-400 leading-relaxed">
+          Strahlen, die diese Polygone schneiden, werden sofort verworfen.
+        </p>
+        <button id="btnStartDrawZone" class="w-full bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 active:scale-95 transition-transform">
+          <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+          <span>Eigenes Sperrgebiet zeichnen</span>
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto space-y-1.5" id="zoneListContainer"></div>
+    </div>
+
+    <!-- Tab 5: Legs -->
+    <div id="resultsTab" class="flex-1 hidden flex-col overflow-hidden p-3 gap-2.5">
+      <div class="grid grid-cols-2 gap-2 text-xs">
+        <div class="bg-marine-900/90 p-2 rounded-xl border border-slate-800">
+          <div class="text-[10px] text-slate-400">Distanz</div>
+          <div class="font-mono font-bold text-sky-300 text-sm" id="resTotalDist">-- nm</div>
+        </div>
+        <div class="bg-marine-900/90 p-2 rounded-xl border border-slate-800">
+          <div class="text-[10px] text-slate-400">Reisedauer</div>
+          <div class="font-mono font-bold text-emerald-300 text-sm" id="resTotalTime">-- h -- m</div>
+        </div>
+        <div class="bg-marine-900/90 p-2 rounded-xl border border-slate-800">
+          <div class="text-[10px] text-slate-400">Schnitt FgG (SOG)</div>
+          <div class="font-mono font-bold text-white text-sm" id="resAvgSog">-- kn</div>
+        </div>
+        <div class="bg-marine-900/90 p-2 rounded-xl border border-slate-800">
+          <div class="text-[10px] text-slate-400">ETA Ankunft</div>
+          <div class="font-mono font-bold text-amber-300 text-xs truncate" id="resEtaTime">--:--</div>
+        </div>
+      </div>
+
+      <div class="bg-marine-900/70 p-2 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
+        <span class="text-slate-400 text-[11px]">Strom-Einfluss:</span>
+        <span id="resCurrentEffect" class="text-emerald-400 font-mono font-bold">+0.0 kn</span>
+      </div>
+
+      <div class="flex-1 flex flex-col overflow-hidden border border-slate-800 rounded-xl bg-marine-900/40 p-2">
+        <div class="flex items-center justify-between pb-1.5 border-b border-slate-800 text-[11px] font-bold text-slate-400">
+          <span>Routen-Abschnitte (<span id="legCount">0</span>)</span>
+          <button id="btnExportGpx" class="text-sky-400 hover:text-white flex items-center gap-1 font-normal">
+            <i data-lucide="download" class="w-3 h-3"></i> GPX
+          </button>
+        </div>
+        <div class="flex-1 overflow-y-auto space-y-2 pt-2 pr-1" id="legTableContainer"></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Notification Toast -->
+  <div id="toastBox" class="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none transition-all duration-300 opacity-0 scale-95" role="status" aria-live="polite">
+    <div class="glass-panel px-4 py-2 rounded-2xl shadow-2xl border border-sky-400/40 text-xs font-medium text-white flex items-center gap-2">
+      <i data-lucide="info" class="w-4 h-4 text-sky-400"></i>
+      <span id="toastMessage">Benachrichtigung</span>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
