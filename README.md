@@ -100,6 +100,18 @@ After that first setup, every merge to `main` redeploys automatically.
   a multi-waypoint route inserts a zero-duration point at every interior
   waypoint, so index-based interpolation made the boat appear to stall
   there.
+- Each isochrone node's `heading`/`stw`/`sog`/`tws`/`twd` describe the hop
+  that *arrived* at it. `computeFullRoute`'s leg-building loop pairs a leg's
+  geometry (`nA` → `nB`) with `nB`'s stored fields (the node the hop
+  actually arrives at), not `nA`'s (the previous hop) — otherwise a leg
+  could display an earlier segment's heading/speed against the current
+  segment's true wind angle, which could show an implausible combination
+  such as near-full cruising speed at a heading inside the no-go zone,
+  especially right at a tack. The isochrone solver's own final "connect to
+  the exact waypoint" segment (`routing.js`) similarly recomputes its
+  speed honestly for its actual bearing instead of reusing the previous
+  node's speed, so a leg pointed into the wind now correctly shows the
+  boat crawling at its no-go-zone speed rather than cruising normally.
 
 ## Notes on production readiness
 

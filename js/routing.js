@@ -230,21 +230,37 @@ export async function solveIsochronePassage(fromCoord, toCoord, startTime, confi
   const last = pathNodes[pathNodes.length - 1];
   const remainingDist = calculateDistanceNm(last.lat, last.lon, toCoord[0], toCoord[1]);
   if (remainingDist > 0.05) {
+    // This final segment closes the gap left by the isochrone step size with
+    // a straight line to the exact waypoint, which can point at any bearing
+    // — including into the no-go zone. Recompute TWA/STW/SOG honestly for
+    // that actual bearing rather than reusing the previous node's speed
+    // (valid for a different heading): otherwise the route can claim full
+    // cruising speed on a heading a boat couldn't actually sail.
     const finalBrg = calculateBearingDeg(last.lat, last.lon, toCoord[0], toCoord[1]);
-    const finalHrs = remainingDist / Math.max(1.0, last.sog);
+    let finalTwa = Math.abs(last.twd - finalBrg) % 360;
+    if (finalTwa > 180) finalTwa = 360 - finalTwa;
+    const finalStw = getDehlerBoatSpeed(finalTwa, last.tws);
+
+    const hRad = finalBrg * Math.PI / 180;
+    const cRad = last.curDir * Math.PI / 180;
+    const vx = finalStw * Math.sin(hRad) + last.curSpeed * Math.sin(cRad);
+    const vy = finalStw * Math.cos(hRad) + last.curSpeed * Math.cos(cRad);
+    const finalSog = Math.max(0.3, Math.hypot(vx, vy));
+    const finalHrs = remainingDist / finalSog;
+
     pathNodes.push({
       id: nodeIdCounter++,
       lat: toCoord[0],
       lon: toCoord[1],
       timeHours: last.timeHours + finalHrs,
       parent: last,
-      stw: last.stw,
-      sog: last.sog,
+      stw: finalStw,
+      sog: +finalSog.toFixed(2),
       heading: Math.round(finalBrg),
       cog: Math.round(finalBrg),
       tws: last.tws,
       twd: last.twd,
-      twa: last.twa,
+      twa: Math.round(finalTwa),
       curSpeed: last.curSpeed,
       curDir: last.curDir,
       distToGoal: 0
