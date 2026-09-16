@@ -2,9 +2,11 @@
 
 A browser-only isochrone weather router for the Dehler 37 CR: plot waypoints
 on a chart, pull live wind/current data, and get a VMG-optimized route with
-ETA, leg-by-leg breakdown, and GPX export. There is no backend — every
-computation runs client-side, and weather/current data comes straight from
-the free [Open-Meteo](https://open-meteo.com/) APIs.
+ETA, leg-by-leg breakdown, and GPX export. A map overlay shows wind and
+current across the visible chart, and a departure-window search compares
+routes across a range of start times to help pick the best one. There is no
+backend — every computation runs client-side, and weather/current data
+comes straight from the free [Open-Meteo](https://open-meteo.com/) APIs.
 
 ## Project structure
 
@@ -27,8 +29,10 @@ js/
   polarChart.js               Polar diagram canvas drawing
   voyage.js                    Timeline scrubber / playback
   gpx.js                        GPX export
-  optimizer.js                  Orchestrates a full route optimization run
-  main.js                        Entry point: map init + event wiring
+  optimizer.js                  Pure route computation + orchestrates a run
+  overlay.js                     Wind/current map overlay (grid-sampled)
+  departureWindow.js              Compares routes across a ±X hour window
+  main.js                          Entry point: map init + event wiring
 ```
 
 Everything is loaded as native ES modules (`<script type="module">`), so
@@ -63,6 +67,21 @@ you):
    `https://<org-or-user>.github.io/<repo>/`.
 
 After that first setup, every merge to `main` redeploys automatically.
+
+## Wind/current overlay and departure-time search
+
+- **Wind & Strom overlay** (header toggle, wind icon): samples a 5×4 grid
+  across the current map view and draws each point's live wind (blue) and
+  current (teal) as a small rotated arrow + speed label. Refreshes
+  (debounced ~700ms) whenever the map is panned or zoomed while the
+  overlay is on. Uses the same cached `fetchMetoceanData` as routing, so
+  it stays polite towards the free API.
+- **Beste Abfahrtszeit** (Waypoints tab): given a departure time, a window
+  (±1–6 h) and a step size, this runs the full isochrone solve for each
+  candidate departure time and lists them sorted by total passage time,
+  with the fastest highlighted. Click "Anwenden" on any row to apply that
+  candidate as the active route. Capped at 15 candidates per search since
+  each one is a full route computation.
 
 ## Notes on production readiness
 

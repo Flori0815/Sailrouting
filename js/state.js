@@ -18,5 +18,7 @@ export const state = {
   drawingZonePoints: [],
   drawingTempLine: null,
   isPlaying: false,
-  playInterval: null
+  playInterval: null,
+  weatherOverlayLayer: null,
+  isWeatherOverlayVisible: false
 };

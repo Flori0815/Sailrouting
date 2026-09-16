@@ -10,6 +10,8 @@ import { drawPolarDiagramCanvas } from './polarChart.js';
 import { initVoyageScrubber } from './voyage.js';
 import { exportGpxFile } from './gpx.js';
 import { triggerIsochroneRouteOptimization } from './optimizer.js';
+import { initWeatherOverlay, toggleWeatherOverlay } from './overlay.js';
+import { findBestDepartureTime } from './departureWindow.js';
 
 function initMap() {
   state.map = L.map('map', {
@@ -103,6 +105,20 @@ function wireControls() {
     }
   });
 
+  document.getElementById('btnToggleWeatherOverlay').addEventListener('click', () => {
+    const isVisible = toggleWeatherOverlay();
+    const ind = document.getElementById('weatherOverlayIndicator');
+    if (isVisible) {
+      ind.className = 'w-1.5 h-1.5 rounded-full bg-sky-400';
+      showToast('Wind- & Strom-Overlay: Sichtbar', 'sky');
+    } else {
+      ind.className = 'w-1.5 h-1.5 rounded-full bg-slate-500';
+      showToast('Wind- & Strom-Overlay: Ausgeblendet', 'slate');
+    }
+  });
+
+  document.getElementById('btnFindBestDeparture').addEventListener('click', findBestDepartureTime);
+
   document.getElementById('quickPresetSelector').addEventListener('change', (e) => {
     loadPreset(e.target.value);
   });
@@ -175,6 +191,7 @@ function wireControls() {
 function init() {
   try {
     initMap();
+    initWeatherOverlay();
     wireControls();
 
     const now = new Date();

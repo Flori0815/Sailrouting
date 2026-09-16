@@ -63,6 +63,13 @@
         <span id="seamarksIndicator" class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
       </button>
 
+      <!-- Wind/Current Overlay Toggle -->
+      <button id="btnToggleWeatherOverlay" title="Wind- & Strom-Overlay ein/ausblenden" aria-label="Wind- und Strömungs-Overlay ein/ausblenden" class="glass-panel p-2 md:px-3 md:py-2 rounded-xl text-sky-300 hover:text-white shadow-lg border border-slate-700/80 flex items-center gap-1.5 active:scale-95 transition-transform">
+        <i data-lucide="wind" class="w-4 h-4 text-sky-400"></i>
+        <span class="hidden md:inline text-xs font-medium">Wetter</span>
+        <span id="weatherOverlayIndicator" class="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
+      </button>
+
       <!-- Optimize CTA -->
       <button id="btnQuickOptimize" class="bg-gradient-to-r from-sky-500 via-teal-400 to-emerald-400 hover:from-sky-400 hover:to-emerald-300 text-slate-950 font-bold px-3 py-2 md:px-4 md:py-2 rounded-xl text-xs md:text-sm shadow-xl shadow-sky-500/20 flex items-center gap-1.5 active:scale-95 transition-transform">
         <i data-lucide="play" class="w-4 h-4 fill-current"></i>
@@ -195,6 +202,31 @@
         </span>
         <label class="sr-only" for="departureTime">Abfahrtszeit</label>
         <input id="departureTime" type="datetime-local" class="bg-marine-900 text-sky-300 border border-slate-700 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-sky-400">
+      </div>
+
+      <div class="bg-marine-800/80 px-2.5 py-2 rounded-xl border border-slate-700 text-xs space-y-2">
+        <span class="flex items-center gap-1.5 font-medium text-slate-300">
+          <i data-lucide="clock" class="w-3.5 h-3.5 text-sky-400"></i> Beste Abfahrtszeit:
+        </span>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-[10px] text-slate-400" for="departureWindowHours">Fenster &plusmn; Std.</label>
+            <input id="departureWindowHours" type="number" min="1" max="6" step="1" value="3" class="w-full text-xs bg-marine-900 text-sky-300 border border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:border-sky-400">
+          </div>
+          <div>
+            <label class="text-[10px] text-slate-400" for="departureWindowStep">Schritt (Std.)</label>
+            <select id="departureWindowStep" class="w-full text-xs bg-marine-900 text-sky-300 border border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:border-sky-400 cursor-pointer">
+              <option value="0.5">0.5</option>
+              <option value="1" selected>1</option>
+              <option value="2">2</option>
+            </select>
+          </div>
+        </div>
+        <button id="btnFindBestDeparture" class="w-full bg-slate-800 hover:bg-slate-700 text-emerald-400 font-semibold py-2 px-3 rounded-xl text-xs border border-emerald-500/30 flex items-center justify-center gap-1.5 active:scale-95 transition-transform">
+          <i data-lucide="search" class="w-3.5 h-3.5"></i>
+          <span>Zeitfenster optimieren</span>
+        </button>
+        <div id="departureWindowResults" class="space-y-1.5 max-h-48 overflow-y-auto"></div>
       </div>
 
       <div class="grid grid-cols-2 gap-2">
