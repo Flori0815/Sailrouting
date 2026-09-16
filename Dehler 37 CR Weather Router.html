@@ -1,0 +1,1752 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Dehler 37 CR Weather Router - Clean Frontier Engine</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            marine: {
+              950: '#030712',
+              900: '#0b1329',
+              850: '#111c38',
+              800: '#1e293b',
+              700: '#334155',
+              600: '#475569'
+            },
+            ocean: {
+              500: '#0284c7',
+              400: '#38bdf8',
+              300: '#7dd3fc'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Leaflet Map CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    html, body {
+      height: 100%;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: #030712;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #map {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0b1329;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 4px;
+    }
+
+    .glass-panel {
+      background: rgba(11, 19, 41, 0.90);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .crosshair-cursor {
+      cursor: crosshair !important;
+    }
+  </style>
+</head>
+<body class="text-slate-100 flex flex-col relative select-none">
+
+  <div id="map"></div>
+
+  <!-- Top Floating Header Bar -->
+  <header class="absolute top-2 left-2 right-2 md:left-4 md:right-4 z-20 flex items-center justify-between pointer-events-none">
+    <div class="pointer-events-auto glass-panel px-3 py-1.5 md:px-4 md:py-2 rounded-2xl shadow-2xl flex items-center gap-2 border border-slate-700/80">
+      <div class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></div>
+      <div class="flex flex-col">
+        <div class="flex items-center gap-1.5">
+          <span class="font-bold text-xs md:text-sm tracking-wide text-white">Dehler 37 CR</span>
+          <span class="text-[9px] bg-sky-500/20 text-sky-300 font-semibold px-1.5 py-0.2 rounded border border-sky-400/30">Isochrone Router</span>
+        </div>
+        <span class="text-[9px] md:text-[10px] text-slate-400 font-mono" id="topStatusTime">Loop-Free Strict VMG Engine</span>
+      </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="pointer-events-auto flex items-center gap-1.5 md:gap-2">
+      <!-- Presets Selector -->
+      <select id="quickPresetSelector" class="glass-panel text-xs text-sky-200 border border-slate-700/80 rounded-xl px-2 py-2 shadow-lg focus:outline-none focus:border-sky-400 cursor-pointer max-w-[140px] sm:max-w-none">
+        <option value="helgoland">⚓ Cuxhaven → Helgoland</option>
+        <option value="kiel">⚓ Kiel → Marstal (Ostsee)</option>
+        <option value="solent">⚓ Solent Round Island</option>
+        <option value="sfbay">⚓ San Francisco Bay</option>
+      </select>
+
+      <!-- Isochrone Toggle -->
+      <button id="btnToggleIsochrones" title="Isochronen-Wellen ein/ausblenden" class="glass-panel p-2 md:px-3 md:py-2 rounded-xl text-sky-300 hover:text-white shadow-lg border border-slate-700/80 flex items-center gap-1.5 active:scale-95 transition-transform">
+        <i data-lucide="git-fork" class="w-4 h-4 text-sky-400"></i>
+        <span class="hidden md:inline text-xs font-medium">Frontier</span>
+        <span id="isochroneIndicator" class="w-2 h-2 rounded-full bg-sky-400"></span>
+      </button>
+
+      <!-- OpenSeaMap Toggle -->
+      <button id="btnToggleSeamarks" title="Seezeichen ein/ausblenden" class="glass-panel p-2 md:px-3 md:py-2 rounded-xl text-sky-300 hover:text-white shadow-lg border border-slate-700/80 flex items-center gap-1.5 active:scale-95 transition-transform">
+        <i data-lucide="anchor" class="w-4 h-4 text-sky-400"></i>
+        <span class="hidden md:inline text-xs font-medium">Betonnung</span>
+        <span id="seamarksIndicator" class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+      </button>
+
+      <!-- Optimize CTA -->
+      <button id="btnQuickOptimize" class="bg-gradient-to-r from-sky-500 via-teal-400 to-emerald-400 hover:from-sky-400 hover:to-emerald-300 text-slate-950 font-bold px-3 py-2 md:px-4 md:py-2 rounded-xl text-xs md:text-sm shadow-xl shadow-sky-500/20 flex items-center gap-1.5 active:scale-95 transition-transform">
+        <i data-lucide="play" class="w-4 h-4 fill-current"></i>
+        <span>Route berechnen</span>
+      </button>
+
+      <!-- Sidebar Drawer Toggle -->
+      <button id="btnToggleSidebar" class="glass-panel p-2 md:p-2.5 rounded-xl text-slate-200 hover:text-white shadow-lg border border-slate-700/80 active:scale-95 transition-transform">
+        <i data-lucide="menu" class="w-5 h-5 text-sky-400"></i>
+      </button>
+    </div>
+  </header>
+
+  <div id="metoceanHud" class="absolute top-16 left-2 md:left-4 z-20 pointer-events-auto transition-all duration-300">
+    <div class="glass-panel rounded-2xl p-2.5 md:p-3 shadow-2xl border border-slate-700/80 w-64 md:w-72">
+      <div class="flex items-center justify-between pb-1.5 border-b border-slate-700/50">
+        <span class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+          <i data-lucide="wind" class="w-3.5 h-3.5 text-sky-400"></i>
+          Wetter & Gezeitenstrom
+        </span>
+        <button id="btnMinimizeHud" class="text-slate-400 hover:text-white p-0.5 rounded">
+          <i data-lucide="chevron-up" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+      <div id="hudBody" class="grid grid-cols-2 gap-2 pt-2 text-xs">
+        <div class="bg-marine-900/80 p-1.5 rounded-lg border border-slate-800">
+          <div class="text-[10px] text-slate-400">Wahrer Wind (TWS/D)</div>
+          <div class="font-mono font-bold text-sky-300 flex items-center gap-1">
+            <span id="hudTws">14.0</span> kn
+            <span id="hudTwdArrow" class="inline-block transform transition-transform">↓</span>
+            <span id="hudTwd" class="text-slate-300 text-[10px]">240°</span>
+          </div>
+        </div>
+
+        <div class="bg-marine-900/80 p-1.5 rounded-lg border border-slate-800">
+          <div class="text-[10px] text-slate-400">Gezeitenstrom</div>
+          <div class="font-mono font-bold text-emerald-400 flex items-center gap-1">
+            <span id="hudCurSpeed">0.9</span> kn
+            <span id="hudCurArrow" class="inline-block transform transition-transform">→</span>
+            <span id="hudCurDir" class="text-slate-300 text-[10px]">120°</span>
+          </div>
+        </div>
+
+        <div class="bg-marine-900/80 p-1.5 rounded-lg border border-slate-800">
+          <div class="text-[10px] text-slate-400">Dehler STW (FdW)</div>
+          <div class="font-mono font-bold text-amber-300">
+            <span id="hudStw">6.4</span> kn
+          </div>
+        </div>
+
+        <div class="bg-marine-900/80 p-1.5 rounded-lg border border-slate-800">
+          <div class="text-[10px] text-slate-400">Ground Speed (FgG)</div>
+          <div class="font-mono font-bold text-white">
+            <span id="hudSog">6.8</span> kn
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Voyage Timeline Scrubber -->
+  <div id="timelineContainer" class="absolute bottom-3 left-2 right-2 md:left-1/4 md:right-1/4 z-20 pointer-events-auto transition-all duration-300">
+    <div class="glass-panel px-3 py-2 md:px-4 md:py-2.5 rounded-2xl shadow-2xl border border-slate-700/80 space-y-1.5">
+      <div class="flex items-center justify-between text-xs">
+        <div class="flex items-center gap-2">
+          <button id="btnPlayVoyage" class="bg-sky-500 hover:bg-sky-400 text-slate-950 p-1.5 rounded-lg active:scale-95 transition-transform font-bold">
+            <i data-lucide="play" class="w-3.5 h-3.5"></i>
+          </button>
+          <span class="font-mono text-slate-300 text-[11px]" id="simTimeLabel">Abfahrt: +00h 00m</span>
+        </div>
+        <div class="text-[11px] text-emerald-400 font-mono" id="simProgressPct">0% absolviert</div>
+      </div>
+      <input id="voyageScrubber" type="range" min="0" max="100" value="0" step="0.5" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-400">
+    </div>
+  </div>
+
+  <div id="sidebarBackdrop" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 opacity-0 pointer-events-none transition-opacity duration-300"></div>
+
+  <aside id="sidebar" class="fixed inset-y-0 left-0 w-full sm:w-96 md:w-[460px] bg-marine-950/95 border-r border-slate-800 z-40 transform -translate-x-full transition-transform duration-300 ease-out flex flex-col shadow-2xl">
+    
+    <div class="p-3.5 border-b border-slate-800 flex items-center justify-between bg-marine-900/60">
+      <div class="flex items-center gap-2">
+        <i data-lucide="compass" class="w-5 h-5 text-sky-400"></i>
+        <h2 class="font-bold text-sm md:text-base text-white">Dehler 37 CR Navigator</h2>
+      </div>
+      <button id="btnCloseSidebar" class="p-1.5 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white transition-colors">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <div class="flex border-b border-slate-800 bg-marine-900/30 text-xs font-medium">
+      <button id="tabBtnWaypoints" class="flex-1 py-2.5 text-center text-sky-400 border-b-2 border-sky-400 font-bold transition-colors">
+        Wegpunkte
+      </button>
+      <button id="tabBtnIsochrone" class="flex-1 py-2.5 text-center text-slate-400 hover:text-slate-200 border-b-2 border-transparent transition-colors">
+        Isochronen
+      </button>
+      <button id="tabBtnPolars" class="flex-1 py-2.5 text-center text-slate-400 hover:text-slate-200 border-b-2 border-transparent transition-colors">
+        Polare
+      </button>
+      <button id="tabBtnHazards" class="flex-1 py-2.5 text-center text-slate-400 hover:text-slate-200 border-b-2 border-transparent transition-colors">
+        Untiefen
+      </button>
+      <button id="tabBtnResults" class="flex-1 py-2.5 text-center text-slate-400 hover:text-slate-200 border-b-2 border-transparent transition-colors">
+        Legs
+      </button>
+    </div>
+
+    <!-- Tab 1: Waypoints -->
+    <div id="waypointsTab" class="flex-1 flex flex-col overflow-hidden p-3 gap-2.5">
+      <div class="bg-marine-800/80 px-2.5 py-2 rounded-xl border border-slate-700 text-xs space-y-1">
+        <div class="flex items-center justify-between text-slate-300">
+          <span class="flex items-center gap-1.5 font-medium">
+            <i data-lucide="sliders" class="w-3.5 h-3.5 text-sky-400"></i> Routing-Strategie:
+          </span>
+        </div>
+        <select id="routingStrategy" class="w-full text-xs bg-marine-900 text-sky-300 border border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:border-sky-400 cursor-pointer">
+          <option value="fastest">⚡ Schnellste ETA (Strict Isochrone Frontier)</option>
+          <option value="comfort">⛵ Komfort (Weniger Wenden, min. 44° TWA)</option>
+          <option value="shortest">📏 Kürzeste fahrbare Distanz</option>
+        </select>
+      </div>
+
+      <div class="flex items-center justify-between bg-marine-800/80 px-2.5 py-1.5 rounded-xl border border-slate-700 text-xs">
+        <span class="text-slate-300 flex items-center gap-1.5">
+          <i data-lucide="calendar" class="w-3.5 h-3.5 text-sky-400"></i> Abfahrt:
+        </span>
+        <input id="departureTime" type="datetime-local" class="bg-marine-900 text-sky-300 border border-slate-700 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-sky-400">
+      </div>
+
+      <div class="grid grid-cols-2 gap-2">
+        <button id="btnAddWpMode" class="bg-slate-800 hover:bg-slate-700 text-sky-400 font-semibold py-2 px-3 rounded-xl text-xs border border-sky-500/30 flex items-center justify-center gap-1.5 active:scale-95 transition-transform">
+          <i data-lucide="map-pin" class="w-3.5 h-3.5"></i>
+          <span>Punkt setzen</span>
+        </button>
+        <button id="btnClearWps" class="bg-slate-800 hover:bg-slate-700 text-rose-400 font-semibold py-2 px-3 rounded-xl text-xs border border-rose-500/30 flex items-center justify-center gap-1.5 active:scale-95 transition-transform">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+          <span>Alle löschen</span>
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto space-y-1.5 pr-1" id="waypointList"></div>
+
+      <div class="pt-2 border-t border-slate-800">
+        <button id="btnRunOptimizer" class="w-full bg-gradient-to-r from-sky-500 via-teal-400 to-emerald-400 text-slate-950 font-bold py-2.5 rounded-xl shadow-lg shadow-sky-500/25 flex items-center justify-center gap-2 active:scale-95 transition-transform text-sm">
+          <i data-lucide="play" class="w-4 h-4 fill-current"></i>
+          <span>Isochrone Route berechnen</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Tab 2: Isochrone Engine Parameters -->
+    <div id="isochroneTab" class="flex-1 hidden flex-col overflow-y-auto p-3 space-y-3">
+      <div class="bg-marine-900/80 p-3 rounded-xl border border-slate-800 space-y-1.5">
+        <div class="flex items-center justify-between text-xs">
+          <span class="font-bold text-white flex items-center gap-1.5">
+            <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i>
+            Loop-Free Spatial Dominance
+          </span>
+          <span class="text-xs bg-emerald-500/20 text-emerald-300 font-mono px-2 py-0.5 rounded">Active Protection</span>
+        </div>
+        <p class="text-[11px] text-slate-400 leading-relaxed">
+          Verhindert Rückwärts-Schlingen durch ein Spatial-Grid: Gebiete, die zu einer früheren Zeit erreicht wurden, werden für spätere Isochronen gesperrt.
+        </p>
+      </div>
+
+      <div class="bg-marine-900/80 p-3 rounded-xl border border-slate-800 space-y-3 text-xs">
+        <div>
+          <div class="flex justify-between text-slate-300 mb-1">
+            <span>Zeitschritt (&Delta;t):</span>
+            <span class="font-mono text-sky-400 font-bold" id="stepTimeLabel">20 min</span>
+          </div>
+          <input id="stepTimeSlider" type="range" min="5" max="45" value="20" step="5" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-400">
+        </div>
+
+        <div>
+          <div class="flex justify-between text-slate-300 mb-1">
+            <span>Fächerbreite (Fan Width):</span>
+            <span class="font-mono text-sky-400 font-bold" id="fanWidthLabel">&plusmn;55&deg;</span>
+          </div>
+          <input id="fanWidthSlider" type="range" min="30" max="75" value="55" step="5" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-400">
+        </div>
+
+        <div>
+          <div class="flex justify-between text-slate-300 mb-1">
+            <span>Strahlen pro Knoten:</span>
+            <span class="font-mono text-sky-400 font-bold" id="raysPerNodeLabel">11 Strahlen</span>
+          </div>
+          <input id="raysPerNodeSlider" type="range" min="7" max="19" value="11" step="2" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-400">
+        </div>
+
+        <div>
+          <div class="flex justify-between text-slate-300 mb-1">
+            <span>Wellenfront-Sektoren:</span>
+            <span class="font-mono text-sky-400 font-bold" id="sectorBinsLabel">24 Sektoren</span>
+          </div>
+          <input id="sectorBinsSlider" type="range" min="16" max="48" value="24" step="4" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-400">
+        </div>
+
+        <div class="flex items-center justify-between pt-2 border-t border-slate-800">
+          <span class="text-slate-300">Wellenfronten einblenden:</span>
+          <input id="checkShowWavefronts" type="checkbox" checked class="w-4 h-4 rounded text-sky-500 focus:ring-0 cursor-pointer">
+        </div>
+
+        <div class="flex items-center justify-between">
+          <span class="text-slate-300">Such-Strahlenbaum anzeigen:</span>
+          <input id="checkShowRays" type="checkbox" checked class="w-4 h-4 rounded text-sky-500 focus:ring-0 cursor-pointer">
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 3: Dehler 37 CR Polars -->
+    <div id="polarsTab" class="flex-1 hidden flex-col overflow-y-auto p-3 space-y-3">
+      <div class="bg-marine-900/80 p-3 rounded-xl border border-slate-800 space-y-2">
+        <div class="flex items-center justify-between text-xs">
+          <span class="font-bold text-white flex items-center gap-1.5">
+            <i data-lucide="gauge" class="w-4 h-4 text-sky-400"></i>
+            Dehler 37 CR Polardiagramm
+          </span>
+          <span class="text-emerald-400 font-mono font-bold" id="polarTwsLabel">16 kn Wind</span>
+        </div>
+        <div class="space-y-1">
+          <div class="flex justify-between text-[11px] text-slate-400">
+            <span>Wahre Windstärke (TWS):</span>
+            <span class="font-mono text-sky-400 font-bold" id="polarTwsSliderVal">16 kn</span>
+          </div>
+          <input id="polarTwsSlider" type="range" min="6" max="25" value="16" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-400">
+        </div>
+      </div>
+
+      <div class="relative bg-marine-900/90 rounded-xl border border-slate-800 p-2 flex flex-col items-center justify-center">
+        <canvas id="polarCanvas" width="320" height="320" class="max-w-full h-auto"></canvas>
+        <div class="flex items-center justify-around w-full mt-2 text-[10px] text-slate-400 font-mono">
+          <div>Am Wind VMG: <span class="text-sky-300 font-bold" id="upwindVmgVal">5.3 kn @ 42&deg;</span></div>
+          <div>Raumschots VMG: <span class="text-emerald-300 font-bold" id="downwindVmgVal">6.5 kn @ 145&deg;</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 4: Hazards & Shallows -->
+    <div id="hazardsTab" class="flex-1 hidden flex-col overflow-y-auto p-3 space-y-2.5">
+      <div class="bg-marine-900/80 p-3 rounded-xl border border-slate-800 space-y-2">
+        <div class="flex items-center justify-between text-xs">
+          <span class="font-bold text-white flex items-center gap-1.5">
+            <i data-lucide="shield-alert" class="w-4 h-4 text-rose-400"></i>
+            Sperrgebiete & Flachwasser
+          </span>
+          <span class="text-[10px] bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded font-mono" id="zoneCountBadge">0 Aktiv</span>
+        </div>
+        <p class="text-[11px] text-slate-400 leading-relaxed">
+          Strahlen, die diese Polygone schneiden, werden sofort verworfen.
+        </p>
+        <button id="btnStartDrawZone" class="w-full bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 active:scale-95 transition-transform">
+          <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+          <span>Eigenes Sperrgebiet zeichnen</span>
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto space-y-1.5" id="zoneListContainer"></div>
+    </div>
+
+    <!-- Tab 5: Legs -->
+    <div id="resultsTab" class="flex-1 hidden flex-col overflow-hidden p-3 gap-2.5">
+      <div class="grid grid-cols-2 gap-2 text-xs">
+        <div class="bg-marine-900/90 p-2 rounded-xl border border-slate-800">
+          <div class="text-[10px] text-slate-400">Distanz</div>
+          <div class="font-mono font-bold text-sky-300 text-sm" id="resTotalDist">-- nm</div>
+        </div>
+        <div class="bg-marine-900/90 p-2 rounded-xl border border-slate-800">
+          <div class="text-[10px] text-slate-400">Reisedauer</div>
+          <div class="font-mono font-bold text-emerald-300 text-sm" id="resTotalTime">-- h -- m</div>
+        </div>
+        <div class="bg-marine-900/90 p-2 rounded-xl border border-slate-800">
+          <div class="text-[10px] text-slate-400">Schnitt FgG (SOG)</div>
+          <div class="font-mono font-bold text-white text-sm" id="resAvgSog">-- kn</div>
+        </div>
+        <div class="bg-marine-900/90 p-2 rounded-xl border border-slate-800">
+          <div class="text-[10px] text-slate-400">ETA Ankunft</div>
+          <div class="font-mono font-bold text-amber-300 text-xs truncate" id="resEtaTime">--:--</div>
+        </div>
+      </div>
+
+      <div class="bg-marine-900/70 p-2 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
+        <span class="text-slate-400 text-[11px]">Strom-Einfluss:</span>
+        <span id="resCurrentEffect" class="text-emerald-400 font-mono font-bold">+0.0 kn</span>
+      </div>
+
+      <div class="flex-1 flex flex-col overflow-hidden border border-slate-800 rounded-xl bg-marine-900/40 p-2">
+        <div class="flex items-center justify-between pb-1.5 border-b border-slate-800 text-[11px] font-bold text-slate-400">
+          <span>Routen-Abschnitte (<span id="legCount">0</span>)</span>
+          <button id="btnExportGpx" class="text-sky-400 hover:text-white flex items-center gap-1 font-normal">
+            <i data-lucide="download" class="w-3 h-3"></i> GPX
+          </button>
+        </div>
+        <div class="flex-1 overflow-y-auto space-y-2 pt-2 pr-1" id="legTableContainer"></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Notification Toast -->
+  <div id="toastBox" class="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none transition-all duration-300 opacity-0 scale-95">
+    <div class="glass-panel px-4 py-2 rounded-2xl shadow-2xl border border-sky-400/40 text-xs font-medium text-white flex items-center gap-2">
+      <i data-lucide="info" class="w-4 h-4 text-sky-400"></i>
+      <span id="toastMessage">Benachrichtigung</span>
+    </div>
+  </div>
+
+  <script>
+    let map = null;
+    let openSeaMapLayer = null;
+    let isSeamarksVisible = true;
+    let isIsochroneLayersVisible = true;
+    let waypoints = [];
+    let avoidZones = [];
+    let isochroneLayers = [];
+    let routePolyline = null;
+    let boatMarker = null;
+    let vectorMarkers = [];
+    let calculatedRouteData = null;
+    let isAddingWaypointMode = false;
+    let isDrawingZoneMode = false;
+    let drawingZonePoints = [];
+    let drawingTempLine = null;
+    let isPlaying = false;
+    let playInterval = null;
+
+    // Dehler 37 CR Polar Performance Matrix (STW in Knots)
+    const polarTWS = [6, 8, 10, 12, 14, 16, 20, 25];
+    const polarTWA = [35, 40, 45, 52, 60, 75, 90, 110, 120, 135, 150, 165, 180];
+    
+    const dehler37Polar = [
+      [3.12, 4.31, 5.12, 5.64, 5.92, 6.10, 6.22, 6.05], // 35°
+      [3.65, 4.95, 5.75, 6.25, 6.51, 6.68, 6.78, 6.62], // 40°
+      [4.10, 5.48, 6.22, 6.65, 6.89, 7.02, 7.14, 7.01], // 45°
+      [4.55, 5.92, 6.61, 7.01, 7.23, 7.35, 7.48, 7.38], // 52°
+      [4.92, 6.25, 6.88, 7.24, 7.46, 7.60, 7.75, 7.68], // 60°
+      [5.25, 6.55, 7.15, 7.48, 7.72, 7.90, 8.12, 8.10], // 75°
+      [5.38, 6.70, 7.30, 7.64, 7.92, 8.15, 8.42, 8.45], // 90°
+      [5.20, 6.62, 7.28, 7.68, 8.01, 8.28, 8.65, 8.78], // 110°
+      [4.85, 6.35, 7.10, 7.55, 7.92, 8.25, 8.72, 8.92], // 120°
+      [4.15, 5.60, 6.55, 7.20, 7.65, 8.05, 8.68, 9.15], // 135°
+      [3.42, 4.68, 5.72, 6.52, 7.12, 7.60, 8.35, 8.95], // 150°
+      [2.95, 4.05, 5.02, 5.85, 6.50, 7.05, 7.85, 8.52], // 165°
+      [2.65, 3.65, 4.55, 5.35, 6.02, 6.55, 7.40, 8.10]  // 180°
+    ];
+
+    function getDehlerBoatSpeed(twa, tws) {
+      const angle = Math.min(180, Math.max(0, Math.abs(twa)));
+      const wind = Math.max(0, tws);
+
+      // Dead zone (Dehler 37 CR cannot sail higher than 34°)
+      if (angle < 34) return 0.2;
+      if (wind < 3) return 0.5;
+
+      let s0 = 0, s1 = 0;
+      for (let i = 0; i < polarTWS.length - 1; i++) {
+        if (wind >= polarTWS[i] && wind <= polarTWS[i + 1]) {
+          s0 = i; s1 = i + 1; break;
+        }
+      }
+      if (wind > polarTWS[polarTWS.length - 1]) {
+        s0 = polarTWS.length - 2; s1 = polarTWS.length - 1;
+      }
+
+      let a0 = 0, a1 = 0;
+      if (angle <= polarTWA[0]) {
+        const factor = Math.max(0, (angle - 32) / (polarTWA[0] - 32));
+        const speedAt35 = dehler37Polar[0][s0] + (wind - polarTWS[s0]) / (polarTWS[s1] - polarTWS[s0]) * (dehler37Polar[0][s1] - dehler37Polar[0][s0]);
+        return +(speedAt35 * factor).toFixed(2);
+      }
+
+      for (let j = 0; j < polarTWA.length - 1; j++) {
+        if (angle >= polarTWA[j] && angle <= polarTWA[j + 1]) {
+          a0 = j; a1 = j + 1; break;
+        }
+      }
+      if (angle >= polarTWA[polarTWA.length - 1]) {
+        a0 = polarTWA.length - 2; a1 = polarTWA.length - 1;
+      }
+
+      const q11 = dehler37Polar[a0][s0], q12 = dehler37Polar[a0][s1];
+      const q21 = dehler37Polar[a1][s0], q22 = dehler37Polar[a1][s1];
+      const tSpeed = (wind - polarTWS[s0]) / (polarTWS[s1] - polarTWS[s0]);
+      const tAngle = (angle - polarTWA[a0]) / (polarTWA[a1] - polarTWA[a0]);
+
+      const r1 = q11 + tSpeed * (q12 - q11);
+      const r2 = q21 + tSpeed * (q22 - q21);
+      const result = r1 + tAngle * (r2 - r1);
+      return +Math.max(0.2, result).toFixed(2);
+    }
+
+    // Geodesic Math
+    function calculateDistanceNm(lat1, lon1, lat2, lon2) {
+      const R = 3440.065;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return +(R * c).toFixed(2);
+    }
+
+    function calculateBearingDeg(lat1, lon1, lat2, lon2) {
+      const y = Math.sin((lon2 - lon1) * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180);
+      const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
+                Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos((lon2 - lon1) * Math.PI / 180);
+      const brng = Math.atan2(y, x) * 180 / Math.PI;
+      return (brng + 360) % 360;
+    }
+
+    function projectPosition(lat, lon, bearingDeg, distNm) {
+      const rad = bearingDeg * Math.PI / 180;
+      const dLat = (distNm * Math.cos(rad)) / 60;
+      const midLat = lat + dLat / 2;
+      const cosM = Math.cos(midLat * Math.PI / 180);
+      const dLon = (distNm * Math.sin(rad)) / (60 * (cosM || 1));
+      return [+(lat + dLat).toFixed(5), +(lon + dLon).toFixed(5)];
+    }
+
+    function pointInPolygon(point, polygonCoords) {
+      const x = point[0], y = point[1];
+      let inside = false;
+      for (let i = 0, j = polygonCoords.length - 1; i < polygonCoords.length; j = i++) {
+        const xi = polygonCoords[i][0], yi = polygonCoords[i][1];
+        const xj = polygonCoords[j][0], yj = polygonCoords[j][1];
+        const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    }
+
+    function segmentsIntersect(a, b, c, d) {
+      const ccw = (p1, p2, p3) => (p3[1] - p1[1]) * (p2[0] - p1[0]) > (p2[1] - p1[1]) * (p3[0] - p1[0]);
+      return (ccw(a, c, d) !== ccw(b, c, d)) && (ccw(a, b, c) !== ccw(a, b, d));
+    }
+
+    function isSegmentNavigable(p1, p2, zones) {
+      if (!zones || zones.length === 0) return true;
+      for (const zone of zones) {
+        const poly = zone.points;
+        if (!poly || poly.length < 3) continue;
+        if (pointInPolygon(p1, poly) || pointInPolygon(p2, poly)) return false;
+        for (let i = 0; i < poly.length; i++) {
+          const v1 = poly[i];
+          const v2 = poly[(i + 1) % poly.length];
+          if (segmentsIntersect(p1, p2, v1, v2)) return false;
+        }
+      }
+      return true;
+    }
+
+    const metoceanCache = new Map();
+
+    async function fetchMetoceanData(lat, lng, targetDate = new Date()) {
+      const key = `${lat.toFixed(2)}_${lng.toFixed(2)}_${targetDate.getHours()}`;
+      if (metoceanCache.has(key)) return metoceanCache.get(key);
+
+      try {
+        const latFmt = lat.toFixed(4);
+        const lngFmt = lng.toFixed(4);
+        const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latFmt}&longitude=${lngFmt}&hourly=wind_speed_10m,wind_direction_10m&wind_speed_unit=kn&forecast_days=3`;
+        const marineUrl = `https://marine-api.open-meteo.com/v1/marine?latitude=${latFmt}&longitude=${lngFmt}&hourly=ocean_current_velocity,ocean_current_direction&forecast_days=3`;
+
+        const [wRes, mRes] = await Promise.allSettled([fetch(weatherUrl), fetch(marineUrl)]);
+
+        let tws = 14.0, twd = 240, curSpeed = 0.8, curDir = 120;
+
+        if (wRes.status === 'fulfilled' && wRes.value.ok) {
+          const wJson = await wRes.value.json();
+          if (wJson.hourly && wJson.hourly.time) {
+            const nowIso = targetDate.toISOString().slice(0, 13) + ":00";
+            let idx = wJson.hourly.time.indexOf(nowIso);
+            if (idx === -1) idx = 0;
+            tws = wJson.hourly.wind_speed_10m[idx] || 14.0;
+            twd = wJson.hourly.wind_direction_10m[idx] || 240;
+          }
+        }
+
+        if (mRes.status === 'fulfilled' && mRes.value.ok) {
+          const mJson = await mRes.value.json();
+          if (mJson.hourly && mJson.hourly.ocean_current_velocity) {
+            const nowIso = targetDate.toISOString().slice(0, 13) + ":00";
+            let idx = mJson.hourly.time.indexOf(nowIso);
+            if (idx === -1) idx = 0;
+            const ms = mJson.hourly.ocean_current_velocity[idx];
+            if (ms !== null && ms !== undefined) {
+              curSpeed = +(ms * 1.94384).toFixed(1);
+              curDir = mJson.hourly.ocean_current_direction[idx] || 120;
+            }
+          }
+        }
+
+        const res = { tws: +tws.toFixed(1), twd: Math.round(twd), curSpeed: +curSpeed.toFixed(1), curDir: Math.round(curDir) };
+        metoceanCache.set(key, res);
+        return res;
+      } catch (err) {
+        const fallback = { tws: 14.0, twd: 240, curSpeed: 0.8, curDir: 120 };
+        metoceanCache.set(key, fallback);
+        return fallback;
+      }
+    }
+
+    async function solveIsochronePassage(fromCoord, toCoord, startTime, config, avoidZones) {
+      const legDist = calculateDistanceNm(fromCoord[0], fromCoord[1], toCoord[0], toCoord[1]);
+      const dtHours = config.dtMinutes / 60;
+      const legBearing = calculateBearingDeg(fromCoord[0], fromCoord[1], toCoord[0], toCoord[1]);
+      const maxSteps = Math.min(65, Math.ceil((legDist / 3.5) / dtHours) + 12);
+
+      const initialMet = await fetchMetoceanData(fromCoord[0], fromCoord[1], startTime);
+
+      let frontier = [{
+        id: 0,
+        lat: fromCoord[0],
+        lon: fromCoord[1],
+        timeHours: 0,
+        parent: null,
+        stw: 0,
+        sog: 0,
+        heading: Math.round(legBearing),
+        cog: Math.round(legBearing),
+        tws: initialMet.tws,
+        twd: initialMet.twd,
+        twa: 90,
+        curSpeed: initialMet.curSpeed,
+        curDir: initialMet.curDir,
+        distToGoal: legDist,
+        stepIndex: 0
+      }];
+
+      // 2D Spatial Dominance Grid (prevents looping back into already-visited nautical cells)
+      // Cell size: ~0.8 nm
+      const spatialGrid = new Map();
+      function getCellKey(lat, lon) {
+        const kLat = Math.floor(lat * 75); // ~0.8 nm
+        const kLon = Math.floor(lon * (75 * Math.cos(lat * Math.PI / 180)));
+        return `${kLat}_${kLon}`;
+      }
+      spatialGrid.set(getCellKey(fromCoord[0], fromCoord[1]), 0);
+
+      const sampledRays = [];
+      const cleanWavefronts = [];
+      let arrivalNode = null;
+      let nodeIdCounter = 1;
+
+      for (let step = 0; step < maxSteps; step++) {
+        const currentTime = new Date(startTime.getTime() + (step + 1) * dtHours * 3600 * 1000);
+        const currentCandidates = [];
+
+        // Center metocean condition on active frontier
+        const avgLat = frontier.reduce((acc, n) => acc + n.lat, 0) / frontier.length;
+        const avgLon = frontier.reduce((acc, n) => acc + n.lon, 0) / frontier.length;
+        const met = await fetchMetoceanData(avgLat, avgLon, currentTime);
+
+        for (const node of frontier) {
+          const directBearing = calculateBearingDeg(node.lat, node.lon, toCoord[0], toCoord[1]);
+          const currentDistToGoal = node.distToGoal;
+
+          if (currentDistToGoal <= Math.max(0.6, 3.8 * dtHours)) {
+            arrivalNode = node;
+            break;
+          }
+
+          // Build candidate headings:
+          // Check if wind is dead ahead (upwind beating)
+          let twaDirect = Math.abs(met.twd - directBearing) % 360;
+          if (twaDirect > 180) twaDirect = 360 - twaDirect;
+
+          const candidateHeadings = [];
+          const halfFan = config.fanWidthDeg; // e.g. 55 deg
+
+          if (twaDirect < 38) {
+            // Sailing close-hauled: explore Port Tack and Starboard Tack at optimal VMG (42°)
+            const stbdTack = (met.twd - 42 + 360) % 360;
+            const portTack = (met.twd + 42) % 360;
+            candidateHeadings.push(stbdTack, portTack);
+
+            // Add fine variations around close-hauled angles
+            candidateHeadings.push((stbdTack - 8 + 360) % 360, (stbdTack + 8) % 360);
+            candidateHeadings.push((portTack - 8 + 360) % 360, (portTack + 8) % 360);
+          } else {
+            // Free sailing / Reaching / Running: fan out symmetrically relative to direct bearing
+            const stepDeg = (halfFan * 2) / Math.max(1, config.numRaysPerNode - 1);
+            for (let r = 0; r < config.numRaysPerNode; r++) {
+              const hdg = Math.round((directBearing - halfFan + r * stepDeg + 360) % 360);
+              candidateHeadings.push(hdg);
+            }
+          }
+
+          for (const heading of candidateHeadings) {
+            let twa = Math.abs(met.twd - heading) % 360;
+            if (twa > 180) twa = 360 - twa;
+            if (twa < 34) continue; // Inside no-go zone
+
+            const stw = getDehlerBoatSpeed(twa, met.tws);
+
+            // Current triangle vector addition: V_ground = V_boat + V_current
+            const hRad = heading * Math.PI / 180;
+            const cRad = met.curDir * Math.PI / 180;
+            const vx = stw * Math.sin(hRad) + met.curSpeed * Math.sin(cRad);
+            const vy = stw * Math.cos(hRad) + met.curSpeed * Math.cos(cRad);
+
+            const sog = Math.hypot(vx, vy);
+            if (sog <= 0.3) continue;
+
+            const cog = (Math.atan2(vx, vy) * 180 / Math.PI + 360) % 360;
+            const stepDistNm = sog * dtHours;
+
+            const nextCoord = projectPosition(node.lat, node.lon, cog, stepDistNm);
+            const nextDistToGoal = calculateDistanceNm(nextCoord[0], nextCoord[1], toCoord[0], toCoord[1]);
+
+            // RULE 1: STRICT FORWARD PROGRESSION (Fixes the triangle looping bug!)
+            // A node must NOT fall backwards away from the goal relative to its parent
+            if (nextDistToGoal > currentDistToGoal + 0.15) {
+              continue; // Rejects backtracking
+            }
+
+            // RULE 2: SPATIAL GRID DOMINANCE (Rejects already visited coordinates)
+            const cellKey = getCellKey(nextCoord[0], nextCoord[1]);
+            const arrivalTime = node.timeHours + dtHours;
+            if (spatialGrid.has(cellKey) && spatialGrid.get(cellKey) <= arrivalTime + 0.05) {
+              continue;
+            }
+
+            // RULE 3: HAZARD AND DRYING SHALLOWS AVOIDANCE
+            if (!isSegmentNavigable([node.lat, node.lon], nextCoord, avoidZones)) {
+              continue;
+            }
+
+            spatialGrid.set(cellKey, arrivalTime);
+
+            const candidate = {
+              id: nodeIdCounter++,
+              lat: nextCoord[0],
+              lon: nextCoord[1],
+              timeHours: arrivalTime,
+              parent: node,
+              stw: stw,
+              sog: +sog.toFixed(2),
+              heading: heading,
+              cog: Math.round(cog),
+              tws: met.tws,
+              twd: met.twd,
+              twa: Math.round(twa),
+              curSpeed: met.curSpeed,
+              curDir: met.curDir,
+              distToGoal: nextDistToGoal,
+              stepIndex: step + 1
+            };
+
+            currentCandidates.push(candidate);
+          }
+
+          if (arrivalNode) break;
+        }
+
+        if (arrivalNode || currentCandidates.length === 0) break;
+
+        const numSectors = config.numSectors;
+        const bins = new Map();
+        const halfFan = config.fanWidthDeg;
+
+        for (const cand of currentCandidates) {
+          // Compute bearing from start to candidate
+          const brngFromStart = calculateBearingDeg(fromCoord[0], fromCoord[1], cand.lat, cand.lon);
+          const relAngle = (brngFromStart - legBearing + 540) % 360 - 180;
+
+          // Ignore candidates that have blown completely outside navigation arc
+          if (Math.abs(relAngle) > halfFan + 15) continue;
+
+          const sectorSpan = (halfFan * 2) / numSectors;
+          const binIdx = Math.floor((relAngle + halfFan) / sectorSpan);
+
+          let score = cand.distToGoal;
+          if (config.strategy === 'comfort' && cand.twa < 44) {
+            score *= 1.12;
+          }
+
+          // In each angular sector bin, only retain the node closest to goal
+          if (!bins.has(binIdx) || score < bins.get(binIdx).score) {
+            bins.set(binIdx, { candidate: cand, score });
+          }
+        }
+
+        frontier = Array.from(bins.values()).map(item => item.candidate);
+
+        // Store clean, sampled rays (max 1 ray per active bin)
+        frontier.forEach(n => {
+          if (n.parent) {
+            sampledRays.push([[n.parent.lat, n.parent.lon], [n.lat, n.lon]]);
+          }
+        });
+
+        // Store smooth, non-jumping wavefront lines
+        if (frontier.length >= 2) {
+          const sortedFrontier = [...frontier].sort((a, b) => {
+            const relA = (calculateBearingDeg(fromCoord[0], fromCoord[1], a.lat, a.lon) - legBearing + 540) % 360 - 180;
+            const relB = (calculateBearingDeg(fromCoord[0], fromCoord[1], b.lat, b.lon) - legBearing + 540) % 360 - 180;
+            return relA - relB;
+          });
+
+          // Break wavefront into contiguous segments if distance between points is too big (prevents cross-bay spikes!)
+          let currentSegment = [];
+          for (let i = 0; i < sortedFrontier.length; i++) {
+            const pt = [sortedFrontier[i].lat, sortedFrontier[i].lon];
+            if (currentSegment.length === 0) {
+              currentSegment.push(pt);
+            } else {
+              const prev = currentSegment[currentSegment.length - 1];
+              const distApart = calculateDistanceNm(prev[0], prev[1], pt[0], pt[1]);
+              if (distApart < 4.0 * dtHours * 8.5) {
+                currentSegment.push(pt);
+              } else {
+                if (currentSegment.length >= 2) cleanWavefronts.push(currentSegment);
+                currentSegment = [pt];
+              }
+            }
+          }
+          if (currentSegment.length >= 2) cleanWavefronts.push(currentSegment);
+        }
+
+        const closest = frontier.reduce((min, n) => n.distToGoal < min.distToGoal ? n : min, frontier[0]);
+        if (closest.distToGoal < Math.max(0.8, 3.8 * dtHours)) {
+          arrivalNode = closest;
+          break;
+        }
+      }
+
+      if (!arrivalNode && frontier.length > 0) {
+        arrivalNode = frontier.reduce((min, n) => n.distToGoal < min.distToGoal ? n : min, frontier[0]);
+      }
+
+      if (!arrivalNode) return null;
+
+      // Reconstruct path from arrival node
+      const pathNodes = [];
+      let curr = arrivalNode;
+      while (curr) {
+        pathNodes.unshift(curr);
+        curr = curr.parent;
+      }
+
+      // Connect final approach to waypoint if needed
+      const last = pathNodes[pathNodes.length - 1];
+      const remainingDist = calculateDistanceNm(last.lat, last.lon, toCoord[0], toCoord[1]);
+      if (remainingDist > 0.05) {
+        const finalBrg = calculateBearingDeg(last.lat, last.lon, toCoord[0], toCoord[1]);
+        const finalHrs = remainingDist / Math.max(1.0, last.sog);
+        pathNodes.push({
+          id: nodeIdCounter++,
+          lat: toCoord[0],
+          lon: toCoord[1],
+          timeHours: last.timeHours + finalHrs,
+          parent: last,
+          stw: last.stw,
+          sog: last.sog,
+          heading: Math.round(finalBrg),
+          cog: Math.round(finalBrg),
+          tws: last.tws,
+          twd: last.twd,
+          twa: last.twa,
+          curSpeed: last.curSpeed,
+          curDir: last.curDir,
+          distToGoal: 0
+        });
+      }
+
+      return {
+        pathNodes,
+        allRays: sampledRays,
+        isochroneWavefronts: cleanWavefronts
+      };
+    }
+
+    async function triggerIsochroneRouteOptimization() {
+      if (waypoints.length < 2) {
+        showToast("Bitte mindestens Start und Ziel setzen.", "amber");
+        toggleSidebar(true);
+        return;
+      }
+
+      showToast("Berechne saubere Isochronen-Front...", "sky");
+
+      const depInput = document.getElementById('departureTime').value;
+      const passageStartTime = depInput ? new Date(depInput) : new Date();
+
+      const config = {
+        dtMinutes: parseInt(document.getElementById('stepTimeSlider').value) || 20,
+        fanWidthDeg: parseInt(document.getElementById('fanWidthSlider').value) || 55,
+        numRaysPerNode: parseInt(document.getElementById('raysPerNodeSlider').value) || 11,
+        numSectors: parseInt(document.getElementById('sectorBinsSlider').value) || 24,
+        strategy: document.getElementById('routingStrategy').value
+      };
+
+      clearIsochroneLayers();
+
+      const fullRoutePoints = [];
+      const fullLegs = [];
+      let currentDeparture = new Date(passageStartTime);
+      let totalDist = 0;
+      let totalDurationHrs = 0;
+      const combinedWavefronts = [];
+      const combinedRays = [];
+
+      for (let w = 0; w < waypoints.length - 1; w++) {
+        const p1 = [waypoints[w].lat, waypoints[w].lng];
+        const p2 = [waypoints[w + 1].lat, waypoints[w + 1].lng];
+
+        const sol = await solveIsochronePassage(p1, p2, currentDeparture, config, avoidZones);
+        if (!sol || !sol.pathNodes || sol.pathNodes.length < 2) {
+          showToast(`Kein sicherer Weg zwischen WP${w} und WP${w+1}`, "rose");
+          continue;
+        }
+
+        combinedWavefronts.push(...sol.isochroneWavefronts);
+        combinedRays.push(...sol.allRays);
+
+        for (let i = 0; i < sol.pathNodes.length - 1; i++) {
+          const nA = sol.pathNodes[i];
+          const nB = sol.pathNodes[i + 1];
+          const d = calculateDistanceNm(nA.lat, nA.lon, nB.lat, nB.lon);
+          const cog = calculateBearingDeg(nA.lat, nA.lon, nB.lat, nB.lon);
+          const legDur = nB.timeHours - nA.timeHours;
+
+          let twa = Math.abs(nA.twd - cog) % 360;
+          if (twa > 180) twa = 360 - twa;
+
+          fullLegs.push({
+            index: fullLegs.length + 1,
+            fromCoord: [nA.lat, nA.lon],
+            toCoord: [nB.lat, nB.lon],
+            midCoord: [(nA.lat + nB.lat) / 2, (nA.lon + nB.lon) / 2],
+            distance: +d.toFixed(2),
+            cog: Math.round(cog),
+            heading: nA.heading,
+            tws: nA.tws,
+            twd: nA.twd,
+            twa: Math.round(twa),
+            currentSpeed: nA.curSpeed,
+            currentDir: nA.curDir,
+            stw: nA.stw,
+            sog: nA.sog,
+            durationHours: legDur,
+            isBeating: twa < 44,
+            tackSide: (cog - nA.twd + 360) % 360 > 180 ? 'Steuerbordbug' : 'Backbordbug',
+            depTime: new Date(currentDeparture)
+          });
+
+          fullRoutePoints.push([nA.lat, nA.lon]);
+          totalDist += d;
+          totalDurationHrs += legDur;
+          currentDeparture = new Date(currentDeparture.getTime() + legDur * 3600 * 1000);
+        }
+
+        fullRoutePoints.push(p2);
+      }
+
+      calculatedRouteData = {
+        routePoints: fullRoutePoints,
+        legs: fullLegs,
+        totalDistance: +totalDist.toFixed(1),
+        totalHours: +totalDurationHrs.toFixed(2),
+        departureTime: new Date(passageStartTime),
+        arrivalTime: currentDeparture,
+        isochroneWavefronts: combinedWavefronts,
+        allRays: combinedRays
+      };
+
+      drawIsochroneVisualsOnMap(calculatedRouteData);
+      renderRouteResults(calculatedRouteData);
+
+      showToast(`Route optimiert: ${fullLegs.length} Abschnitte, ETA ${calculatedRouteData.arrivalTime.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}`, "emerald");
+      switchTab('resultsTab');
+    }
+
+    function clearIsochroneLayers() {
+      isochroneLayers.forEach(l => map.removeLayer(l));
+      isochroneLayers = [];
+      if (routePolyline) {
+        map.removeLayer(routePolyline);
+        routePolyline = null;
+      }
+      vectorMarkers.forEach(m => map.removeLayer(m));
+      vectorMarkers = [];
+    }
+
+    function drawIsochroneVisualsOnMap(data) {
+      clearIsochroneLayers();
+
+      const showWavefronts = document.getElementById('checkShowWavefronts').checked && isIsochroneLayersVisible;
+      const showRays = document.getElementById('checkShowRays').checked && isIsochroneLayersVisible;
+
+      // Draw subtle ray web
+      if (showRays && data.allRays) {
+        const stepInc = Math.max(1, Math.floor(data.allRays.length / 90));
+        for (let i = 0; i < data.allRays.length; i += stepInc) {
+          const ray = data.allRays[i];
+          const line = L.polyline(ray, {
+            color: '#38bdf8',
+            weight: 1.0,
+            opacity: 0.22,
+            dashArray: '2, 5'
+          }).addTo(map);
+          isochroneLayers.push(line);
+        }
+      }
+
+      // Draw crisp, elegant wavefront arcs
+      if (showWavefronts && data.isochroneWavefronts) {
+        data.isochroneWavefronts.forEach((wavePts, idx) => {
+          if (wavePts.length >= 2) {
+            const hue = 185 + (idx * 6) % 65;
+            const wave = L.polyline(wavePts, {
+              color: `hsl(${hue}, 95%, 62%)`,
+              weight: 2.0,
+              opacity: 0.65
+            }).addTo(map);
+            isochroneLayers.push(wave);
+          }
+        });
+      }
+
+      // Green winning route
+      routePolyline = L.polyline(data.routePoints, {
+        color: '#10b981',
+        weight: 4.5,
+        opacity: 0.95,
+        lineCap: 'round',
+        lineJoin: 'round'
+      }).addTo(map);
+
+      if (!boatMarker) {
+        const boatIcon = L.divIcon({
+          className: 'boat-marker',
+          html: `<div id="boatIconDiv" class="text-sky-400 transform transition-transform duration-300 drop-shadow-[0_0_10px_rgba(56,189,248,0.9)]">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <polygon points="12 2 19 21 12 17 5 21 12 2" fill="#38bdf8" fill-opacity="0.4"></polygon>
+                  </svg>
+                 </div>`,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
+        });
+        boatMarker = L.marker(data.routePoints[0], { icon: boatIcon, zIndexOffset: 1000 }).addTo(map);
+      } else {
+        boatMarker.setLatLng(data.routePoints[0]);
+      }
+
+      drawVectorArrowsOnMap(data);
+    }
+
+    function drawVectorArrowsOnMap(data) {
+      vectorMarkers.forEach(m => map.removeLayer(m));
+      vectorMarkers = [];
+
+      // Avoid clutter: sample max 5 evenly spaced labels along route
+      const stride = Math.max(1, Math.floor(data.legs.length / 5));
+      for (let i = 0; i < data.legs.length; i += stride) {
+        const leg = data.legs[i];
+        const arrowIcon = L.divIcon({
+          className: 'vector-arrow',
+          html: `<div class="flex items-center gap-1 text-[9px] font-mono text-sky-300 bg-marine-950/90 px-1.5 py-0.5 rounded border border-slate-700 pointer-events-none whitespace-nowrap shadow-md">
+                  <span style="transform: rotate(${leg.heading}deg)" class="inline-block text-sky-400 font-bold">↑</span>
+                  <span>${leg.stw}k STW</span>
+                  <span class="text-emerald-400">🌊${leg.currentSpeed}k</span>
+                 </div>`,
+          iconSize: [85, 20],
+          iconAnchor: [42, 10]
+        });
+        const m = L.marker(leg.midCoord, { icon: arrowIcon }).addTo(map);
+        vectorMarkers.push(m);
+      }
+    }
+
+    function renderRouteResults(data) {
+      document.getElementById('resTotalDist').innerText = `${data.totalDistance} nm`;
+
+      const hrs = Math.floor(data.totalHours);
+      const mins = Math.round((data.totalHours - hrs) * 60);
+      document.getElementById('resTotalTime').innerText = `${hrs}h ${mins}m`;
+
+      const avgSog = (data.totalDistance / Math.max(0.1, data.totalHours)).toFixed(1);
+      document.getElementById('resAvgSog').innerText = `${avgSog} kn`;
+
+      document.getElementById('resEtaTime').innerText = data.arrivalTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) +
+        ` (${data.arrivalTime.toLocaleDateString([], { month: 'short', day: 'numeric' })})`;
+
+      const avgStw = (data.legs.reduce((acc, l) => acc + l.stw, 0) / Math.max(1, data.legs.length)).toFixed(1);
+      const diff = +(avgSog - avgStw).toFixed(1);
+      const effectEl = document.getElementById('resCurrentEffect');
+      effectEl.innerText = `${diff >= 0 ? '+' : ''}${diff} kn (${diff >= 0 ? 'Mitstrom' : 'Gegenstrom'})`;
+      effectEl.className = diff >= 0 ? 'text-emerald-400 font-mono font-bold' : 'text-rose-400 font-mono font-bold';
+
+      const legContainer = document.getElementById('legTableContainer');
+      document.getElementById('legCount').innerText = data.legs.length;
+      legContainer.innerHTML = '';
+
+      data.legs.forEach(leg => {
+        const legCard = document.createElement('div');
+        legCard.className = "bg-marine-900/90 border border-slate-700/80 rounded-xl p-2.5 space-y-1.5";
+
+        const legDurHrs = Math.floor(leg.durationHours);
+        const legDurMins = Math.round((leg.durationHours - legDurHrs) * 60);
+
+        const tackBadge = leg.isBeating
+          ? `<span class="text-[9px] px-1.5 py-0.5 rounded ${leg.tackSide.includes('Steuer') ? 'bg-sky-500/20 text-sky-300 border border-sky-400/30' : 'bg-amber-500/20 text-amber-300 border border-amber-400/30'} font-bold ml-1">${leg.tackSide}</span>`
+          : '';
+
+        legCard.innerHTML = `
+          <div class="flex items-center justify-between border-b border-slate-800 pb-1 text-xs">
+            <span class="font-bold text-sky-300 flex items-center">Leg ${leg.index}: Kurs ${leg.cog}° ${tackBadge}</span>
+            <span class="font-mono text-emerald-400 font-bold">${leg.sog} kn SOG</span>
+          </div>
+          <div class="grid grid-cols-3 gap-1 text-[10px] text-slate-300">
+            <div>Dist: <strong class="text-white">${leg.distance} nm</strong></div>
+            <div>HDG: <strong class="text-white">${leg.heading}°</strong></div>
+            <div>Zeit: <strong class="text-white">${legDurHrs}h ${legDurMins}m</strong></div>
+            <div>Wind: <strong class="text-sky-300">${leg.tws}k @ ${leg.twd}°</strong></div>
+            <div>TWA: <strong class="text-sky-300">${leg.twa}°</strong></div>
+            <div>Strom: <strong class="text-emerald-300">${leg.currentSpeed}k → ${leg.currentDir}°</strong></div>
+          </div>
+        `;
+        legContainer.appendChild(legCard);
+      });
+
+      if (data.legs.length > 0) {
+        updateHudDisplay(data.legs[0]);
+      }
+    }
+
+    function updateHudDisplay(leg) {
+      document.getElementById('hudTws').innerText = leg.tws;
+      document.getElementById('hudTwd').innerText = `${leg.twd}°`;
+      document.getElementById('hudTwdArrow').style.transform = `rotate(${leg.twd}deg)`;
+
+      document.getElementById('hudCurSpeed').innerText = leg.currentSpeed;
+      document.getElementById('hudCurDir').innerText = `${leg.currentDir}°`;
+      document.getElementById('hudCurArrow').style.transform = `rotate(${leg.currentDir}deg)`;
+
+      document.getElementById('hudStw').innerText = leg.stw;
+      document.getElementById('hudSog').innerText = leg.sog;
+    }
+
+    function initVoyageScrubber() {
+      const slider = document.getElementById('voyageScrubber');
+      const timeLabel = document.getElementById('simTimeLabel');
+      const progressLabel = document.getElementById('simProgressPct');
+      const playBtn = document.getElementById('btnPlayVoyage');
+
+      const applyScrub = (pct) => {
+        if (!calculatedRouteData || !calculatedRouteData.legs.length) return;
+        const pts = calculatedRouteData.routePoints;
+        const totalLegs = pts.length - 1;
+        const exactIdx = (pct / 100) * totalLegs;
+        const legIdx = Math.min(Math.floor(exactIdx), totalLegs - 1);
+        const subFrac = exactIdx - legIdx;
+
+        const p1 = pts[legIdx];
+        const p2 = pts[legIdx + 1];
+
+        const curLat = p1[0] + (p2[0] - p1[0]) * subFrac;
+        const curLng = p1[1] + (p2[1] - p1[1]) * subFrac;
+
+        if (boatMarker) {
+          boatMarker.setLatLng([curLat, curLng]);
+          const currentLeg = calculatedRouteData.legs[legIdx];
+          const boatDiv = document.getElementById('boatIconDiv');
+          if (boatDiv) {
+            boatDiv.style.transform = `rotate(${currentLeg.heading}deg)`;
+          }
+          updateHudDisplay(currentLeg);
+        }
+
+        const totalHrs = calculatedRouteData.totalHours;
+        const currentElapsedHrs = (pct / 100) * totalHrs;
+        const elH = Math.floor(currentElapsedHrs);
+        const elM = Math.round((currentElapsedHrs - elH) * 60);
+
+        timeLabel.innerText = `+${elH}h ${elM}m (${(pct).toFixed(0)}%)`;
+        progressLabel.innerText = `${(pct).toFixed(0)}% absolviert`;
+      };
+
+      slider.addEventListener('input', (e) => applyScrub(parseFloat(e.target.value)));
+
+      playBtn.addEventListener('click', () => {
+        isPlaying = !isPlaying;
+        playBtn.innerHTML = isPlaying ? '<i data-lucide="pause" class="w-3.5 h-3.5"></i>' : '<i data-lucide="play" class="w-3.5 h-3.5"></i>';
+        lucide.createIcons();
+
+        if (isPlaying) {
+          playInterval = setInterval(() => {
+            let val = parseFloat(slider.value) + 0.8;
+            if (val >= 100) {
+              val = 0;
+              isPlaying = false;
+              clearInterval(playInterval);
+              playBtn.innerHTML = '<i data-lucide="play" class="w-3.5 h-3.5"></i>';
+              lucide.createIcons();
+            }
+            slider.value = val;
+            applyScrub(val);
+          }, 60);
+        } else {
+          clearInterval(playInterval);
+        }
+      });
+    }
+
+    function drawPolarDiagramCanvas(selectedTws) {
+      const canvas = document.getElementById('polarCanvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width, h = canvas.height;
+      const cx = w / 2, cy = h / 2;
+      const maxSpeed = 10.0;
+      const radius = w * 0.44;
+
+      ctx.clearRect(0, 0, w, h);
+
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 1;
+      for (let s = 2; s <= maxSpeed; s += 2) {
+        const r = (s / maxSpeed) * radius;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+        ctx.stroke();
+
+        ctx.fillStyle = '#64748b';
+        ctx.font = '9px monospace';
+        ctx.fillText(`${s}k`, cx + 3, cy - r + 9);
+      }
+
+      for (let a = 0; a < 360; a += 30) {
+        const rad = (a - 90) * Math.PI / 180;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + radius * Math.cos(rad), cy + radius * Math.sin(rad));
+        ctx.stroke();
+      }
+
+      ctx.beginPath();
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 2.5;
+
+      for (let angle = 0; angle <= 180; angle += 2) {
+        const spd = getDehlerBoatSpeed(angle, selectedTws);
+        const r = (spd / maxSpeed) * radius;
+        const rad = (angle - 90) * Math.PI / 180;
+        const px = cx + r * Math.cos(rad);
+        const py = cy + r * Math.sin(rad);
+        if (angle === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+
+      for (let angle = 180; angle >= 0; angle -= 2) {
+        const spd = getDehlerBoatSpeed(angle, selectedTws);
+        const r = (spd / maxSpeed) * radius;
+        const rad = (-angle - 90) * Math.PI / 180;
+        const px = cx + r * Math.cos(rad);
+        const py = cy + r * Math.sin(rad);
+        ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.12)';
+      ctx.fill();
+      ctx.stroke();
+
+      let maxUpwindVmg = 0, optUpwindTwa = 42;
+      let maxDownwindVmg = 0, optDownwindTwa = 145;
+
+      for (let a = 34; a <= 70; a++) {
+        const spd = getDehlerBoatSpeed(a, selectedTws);
+        const vmg = spd * Math.cos(a * Math.PI / 180);
+        if (vmg > maxUpwindVmg) {
+          maxUpwindVmg = vmg;
+          optUpwindTwa = a;
+        }
+      }
+
+      for (let a = 120; a <= 170; a++) {
+        const spd = getDehlerBoatSpeed(a, selectedTws);
+        const vmg = spd * -Math.cos(a * Math.PI / 180);
+        if (vmg > maxDownwindVmg) {
+          maxDownwindVmg = vmg;
+          optDownwindTwa = a;
+        }
+      }
+
+      document.getElementById('upwindVmgVal').innerText = `${maxUpwindVmg.toFixed(1)} kn @ ${optUpwindTwa}°`;
+      document.getElementById('downwindVmgVal').innerText = `${maxDownwindVmg.toFixed(1)} kn @ ${optDownwindTwa}°`;
+    }
+
+    function renderWaypointList() {
+      const container = document.getElementById('waypointList');
+      container.innerHTML = '';
+
+      waypoints.forEach((wp, idx) => {
+        const item = document.createElement('div');
+        item.className = "bg-marine-800/80 border border-slate-700/80 rounded-xl p-2 flex items-center justify-between text-xs";
+        
+        const isStart = idx === 0;
+        const isFinish = idx === waypoints.length - 1 && waypoints.length > 1;
+        const badgeColor = isStart ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
+                           isFinish ? 'bg-rose-500/20 text-rose-400 border-rose-500/30' :
+                           'bg-sky-500/20 text-sky-400 border-sky-500/30';
+        const label = isStart ? 'Start' : (isFinish ? 'Ziel' : `WP ${idx}`);
+
+        item.innerHTML = `
+          <div class="flex items-center gap-2">
+            <span class="text-[10px] font-bold px-1.5 py-0.5 rounded border ${badgeColor}">${label}</span>
+            <div>
+              <div class="font-semibold text-white">${wp.name}</div>
+              <div class="font-mono text-[10px] text-slate-400">${wp.lat.toFixed(4)}°, ${wp.lng.toFixed(4)}°</div>
+            </div>
+          </div>
+          <button onclick="removeWaypoint(${idx})" class="p-1 text-slate-500 hover:text-rose-400">
+            <i data-lucide="trash" class="w-3.5 h-3.5"></i>
+          </button>
+        `;
+        container.appendChild(item);
+      });
+      lucide.createIcons();
+    }
+
+    function addWaypoint(lat, lng, name = null) {
+      const id = Date.now() + Math.random();
+      const idx = waypoints.length;
+      const isStart = idx === 0;
+      const defaultName = name || (isStart ? 'Start' : `Wegpunkt ${idx}`);
+
+      const icon = L.divIcon({
+        className: 'custom-wp-pin',
+        html: `<div class="flex flex-col items-center">
+                <div class="w-4 h-4 rounded-full ${isStart ? 'bg-emerald-400' : 'bg-sky-400'} border-2 border-slate-900 shadow-md"></div>
+                <div class="text-[9px] font-bold text-white bg-slate-900/90 px-1 rounded shadow whitespace-nowrap">${defaultName}</div>
+               </div>`,
+        iconSize: [20, 30],
+        iconAnchor: [10, 15]
+      });
+
+      const marker = L.marker([lat, lng], { icon, draggable: true }).addTo(map);
+
+      marker.on('dragend', (e) => {
+        const pos = e.target.getLatLng();
+        wpObj.lat = pos.lat;
+        wpObj.lng = pos.lng;
+        renderWaypointList();
+      });
+
+      const wpObj = { id, lat, lng, name: defaultName, marker };
+      waypoints.push(wpObj);
+      renderWaypointList();
+    }
+
+    window.removeWaypoint = function(idx) {
+      if (waypoints[idx]) {
+        map.removeLayer(waypoints[idx].marker);
+        waypoints.splice(idx, 1);
+        renderWaypointList();
+      }
+    };
+
+    function clearAllWaypoints() {
+      waypoints.forEach(w => map.removeLayer(w.marker));
+      waypoints = [];
+      clearIsochroneLayers();
+      renderWaypointList();
+      showToast("Alle Wegpunkte gelöscht", "sky");
+    }
+
+    function loadPreset(presetKey) {
+      clearAllWaypoints();
+      avoidZones.forEach(z => map.removeLayer(z.polygon));
+      avoidZones = [];
+
+      if (presetKey === 'helgoland') {
+        map.setView([54.02, 8.25], 10);
+        addWaypoint(53.8850, 8.6850, "Cuxhaven Kugelbake");
+        addWaypoint(53.9850, 8.3500, "Elbe 1 Feuerschiff");
+        addWaypoint(54.1750, 7.8920, "Helgoland Südhafen");
+
+        // Realistische Wattenmeer-Untiefen: Scharhörnriff & Großer Knechtsand
+        const scharhoernRiff = [
+          [53.9200, 8.4200],
+          [53.9700, 8.3500],
+          [53.9600, 8.5200],
+          [53.9100, 8.5500]
+        ];
+        addAvoidZone("Scharhörn Riff (Watt)", scharhoernRiff);
+
+        // Mellum & Hohe Weg Watt (schützt vor Abdriften in die trockenfallende Wesermündung)
+        const hoheWegWatt = [
+          [53.7500, 8.1500],
+          [53.8800, 8.2200],
+          [53.8300, 8.3500],
+          [53.7200, 8.2800]
+        ];
+        addAvoidZone("Mellum & Hohe Weg Watt", hoheWegWatt);
+
+      } else if (presetKey === 'kiel') {
+        map.setView([54.60, 10.35], 10);
+        addWaypoint(54.4250, 10.1850, "Kiel-Schilksee");
+        addWaypoint(54.5100, 10.2700, "Kiel Leuchtturm");
+        addWaypoint(54.8500, 10.5100, "Marstal Port");
+
+        const langelandShallows = [
+          [54.7400, 10.6000],
+          [54.8000, 10.6800],
+          [54.7500, 10.7500],
+          [54.7000, 10.6500]
+        ];
+        addAvoidZone("Langeland Flach", langelandShallows);
+
+      } else if (presetKey === 'solent') {
+        map.setView([50.74, -1.35], 11);
+        addWaypoint(50.7630, -1.2980, "Cowes");
+        addWaypoint(50.7300, -1.4100, "Newtown Bay");
+        addWaypoint(50.7070, -1.5000, "Yarmouth");
+
+      } else if (presetKey === 'sfbay') {
+        map.setView([37.82, -122.42], 12);
+        addWaypoint(37.8080, -122.4100, "Fisherman's Wharf");
+        addWaypoint(37.8190, -122.4780, "Golden Gate Bridge");
+        addWaypoint(37.8600, -122.4300, "Sausalito Pt");
+      }
+
+      showToast(`Preset ${presetKey.toUpperCase()} geladen`, "emerald");
+    }
+
+    function addAvoidZone(name, points) {
+      const polygon = L.polygon(points, {
+        color: '#f43f5e',
+        fillColor: '#f43f5e',
+        fillOpacity: 0.25,
+        weight: 2
+      }).addTo(map);
+
+      avoidZones.push({ id: Date.now() + Math.random(), name, points, polygon });
+      renderAvoidZones();
+    }
+
+    function renderAvoidZones() {
+      const container = document.getElementById('zoneListContainer');
+      document.getElementById('zoneCountBadge').innerText = `${avoidZones.length} Aktiv`;
+      container.innerHTML = '';
+
+      avoidZones.forEach((z, idx) => {
+        const item = document.createElement('div');
+        item.className = "bg-marine-800/80 border border-slate-700/80 rounded-xl p-2 flex items-center justify-between text-xs";
+        item.innerHTML = `
+          <div class="flex items-center gap-2">
+            <i data-lucide="shield-alert" class="w-3.5 h-3.5 text-rose-400"></i>
+            <span class="font-medium text-slate-200">${z.name}</span>
+          </div>
+          <button onclick="removeAvoidZone(${idx})" class="p-1 text-slate-500 hover:text-rose-400">
+            <i data-lucide="trash" class="w-3.5 h-3.5"></i>
+          </button>
+        `;
+        container.appendChild(item);
+      });
+      lucide.createIcons();
+    }
+
+    window.removeAvoidZone = function(idx) {
+      if (avoidZones[idx]) {
+        map.removeLayer(avoidZones[idx].polygon);
+        avoidZones.splice(idx, 1);
+        renderAvoidZones();
+      }
+    };
+
+    function showToast(msg, type = 'sky') {
+      const toast = document.getElementById('toastBox');
+      const text = document.getElementById('toastMessage');
+      text.innerText = msg;
+      toast.classList.remove('opacity-0', 'scale-95');
+      toast.classList.add('opacity-100', 'scale-100');
+      setTimeout(() => {
+        toast.classList.remove('opacity-100', 'scale-100');
+        toast.classList.add('opacity-0', 'scale-95');
+      }, 2600);
+    }
+
+    function toggleSidebar(open = null) {
+      const sidebar = document.getElementById('sidebar');
+      const backdrop = document.getElementById('sidebarBackdrop');
+      const isOpen = !sidebar.classList.contains('-translate-x-full');
+      const shouldOpen = open !== null ? open : !isOpen;
+
+      if (shouldOpen) {
+        sidebar.classList.remove('-translate-x-full');
+        backdrop.classList.remove('opacity-0', 'pointer-events-none');
+        backdrop.classList.add('opacity-100');
+      } else {
+        sidebar.classList.add('-translate-x-full');
+        backdrop.classList.add('opacity-0', 'pointer-events-none');
+        backdrop.classList.remove('opacity-100');
+      }
+    }
+
+    function switchTab(tabId) {
+      const tabs = ['waypointsTab', 'isochroneTab', 'polarsTab', 'hazardsTab', 'resultsTab'];
+      const btns = {
+        waypointsTab: 'tabBtnWaypoints',
+        isochroneTab: 'tabBtnIsochrone',
+        polarsTab: 'tabBtnPolars',
+        hazardsTab: 'tabBtnHazards',
+        resultsTab: 'tabBtnResults'
+      };
+
+      tabs.forEach(t => {
+        const el = document.getElementById(t);
+        const btn = document.getElementById(btns[t]);
+        if (t === tabId) {
+          el.classList.remove('hidden');
+          el.classList.add('flex');
+          btn.classList.add('text-sky-400', 'border-sky-400', 'font-bold');
+          btn.classList.remove('text-slate-400', 'border-transparent');
+        } else {
+          el.classList.add('hidden');
+          el.classList.remove('flex');
+          btn.classList.remove('text-sky-400', 'border-sky-400', 'font-bold');
+          btn.classList.add('text-slate-400', 'border-transparent');
+        }
+      });
+
+      if (tabId === 'polarsTab') {
+        const val = parseInt(document.getElementById('polarTwsSlider').value);
+        drawPolarDiagramCanvas(val);
+      }
+    }
+
+    function exportGpxFile() {
+      if (!calculatedRouteData || !calculatedRouteData.routePoints) {
+        showToast("Zuerst Route berechnen.", "amber");
+        return;
+      }
+
+      let gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Dehler 37 CR Weather Router" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Dehler 37 CR Isochrone Route</name>
+    <time>${new Date().toISOString()}</time>
+  </metadata>
+  <rte>
+    <name>Optimierte Route</name>
+`;
+      calculatedRouteData.routePoints.forEach((pt, i) => {
+        gpx += `    <rtept lat="${pt[0]}" lon="${pt[1]}"><name>WP${i}</name></rtept>\n`;
+      });
+      gpx += `  </rte>
+</gpx>`;
+
+      const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Dehler37_Route_${new Date().toISOString().slice(0, 10)}.gpx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast("GPX-Datei heruntergeladen!", "emerald");
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      map = L.map('map', {
+        zoomControl: false,
+        attributionControl: false
+      }).setView([54.02, 8.25], 10);
+
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 18,
+        opacity: 0.88
+      }).addTo(map);
+
+      openSeaMapLayer = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
+        maxZoom: 18,
+        opacity: 1.0
+      }).addTo(map);
+
+      map.on('click', (e) => {
+        if (isAddingWaypointMode) {
+          addWaypoint(e.latlng.lat, e.latlng.lng);
+          isAddingWaypointMode = false;
+          document.getElementById('map').classList.remove('crosshair-cursor');
+          showToast("Wegpunkt gesetzt!", "emerald");
+          toggleSidebar(true);
+        } else if (isDrawingZoneMode) {
+          drawingZonePoints.push([e.latlng.lat, e.latlng.lng]);
+          if (!drawingTempLine) {
+            drawingTempLine = L.polyline(drawingZonePoints, { color: '#f43f5e', dashArray: '5, 5' }).addTo(map);
+          } else {
+            drawingTempLine.setLatLngs(drawingZonePoints);
+          }
+
+          if (drawingZonePoints.length >= 3) {
+            const first = drawingZonePoints[0];
+            const dist = calculateDistanceNm(e.latlng.lat, e.latlng.lng, first[0], first[1]);
+            if (dist < 0.8 && drawingZonePoints.length > 3) {
+              map.removeLayer(drawingTempLine);
+              drawingTempLine = null;
+              addAvoidZone(`Sperrgebiet ${avoidZones.length + 1}`, drawingZonePoints);
+              drawingZonePoints = [];
+              isDrawingZoneMode = false;
+              document.getElementById('map').classList.remove('crosshair-cursor');
+              showToast("Sperrgebiet gespeichert!", "emerald");
+              toggleSidebar(true);
+              switchTab('hazardsTab');
+            }
+          }
+        }
+      });
+
+      document.getElementById('btnToggleSidebar').addEventListener('click', () => toggleSidebar());
+      document.getElementById('btnCloseSidebar').addEventListener('click', () => toggleSidebar(false));
+      document.getElementById('sidebarBackdrop').addEventListener('click', () => toggleSidebar(false));
+
+      document.getElementById('btnQuickOptimize').addEventListener('click', triggerIsochroneRouteOptimization);
+      document.getElementById('btnRunOptimizer').addEventListener('click', () => {
+        toggleSidebar(false);
+        triggerIsochroneRouteOptimization();
+      });
+
+      document.getElementById('btnToggleIsochrones').addEventListener('click', () => {
+        isIsochroneLayersVisible = !isIsochroneLayersVisible;
+        const ind = document.getElementById('isochroneIndicator');
+        if (isIsochroneLayersVisible) {
+          ind.className = "w-2 h-2 rounded-full bg-sky-400";
+          showToast("Isochronen: Sichtbar", "sky");
+        } else {
+          ind.className = "w-2 h-2 rounded-full bg-slate-500";
+          showToast("Isochronen: Ausgeblendet", "slate");
+        }
+        if (calculatedRouteData) drawIsochroneVisualsOnMap(calculatedRouteData);
+      });
+
+      document.getElementById('btnToggleSeamarks').addEventListener('click', () => {
+        isSeamarksVisible = !isSeamarksVisible;
+        if (isSeamarksVisible) {
+          map.addLayer(openSeaMapLayer);
+          document.getElementById('seamarksIndicator').className = "w-1.5 h-1.5 rounded-full bg-emerald-400";
+          showToast("OpenSeaMap Betonnung: EIN", "sky");
+        } else {
+          map.removeLayer(openSeaMapLayer);
+          document.getElementById('seamarksIndicator').className = "w-1.5 h-1.5 rounded-full bg-slate-500";
+          showToast("OpenSeaMap Betonnung: AUS", "slate");
+        }
+      });
+
+      document.getElementById('quickPresetSelector').addEventListener('change', (e) => {
+        loadPreset(e.target.value);
+      });
+
+      document.getElementById('btnAddWpMode').addEventListener('click', () => {
+        isAddingWaypointMode = true;
+        document.getElementById('map').classList.add('crosshair-cursor');
+        toggleSidebar(false);
+        showToast("Auf die Seekarte tippen, um Punkt zu setzen", "sky");
+      });
+
+      document.getElementById('btnClearWps').addEventListener('click', clearAllWaypoints);
+
+      document.getElementById('btnStartDrawZone').addEventListener('click', () => {
+        isDrawingZoneMode = true;
+        drawingZonePoints = [];
+        document.getElementById('map').classList.add('crosshair-cursor');
+        toggleSidebar(false);
+        showToast("Punkte um Hindernis tippen. Startpunkt antippen zum Schließen.", "rose");
+      });
+
+      document.getElementById('tabBtnWaypoints').addEventListener('click', () => switchTab('waypointsTab'));
+      document.getElementById('tabBtnIsochrone').addEventListener('click', () => switchTab('isochroneTab'));
+      document.getElementById('tabBtnPolars').addEventListener('click', () => switchTab('polarsTab'));
+      document.getElementById('tabBtnHazards').addEventListener('click', () => switchTab('hazardsTab'));
+      document.getElementById('tabBtnResults').addEventListener('click', () => switchTab('resultsTab'));
+
+      let isHudMinimized = false;
+      document.getElementById('btnMinimizeHud').addEventListener('click', () => {
+        isHudMinimized = !isHudMinimized;
+        const hudBody = document.getElementById('hudBody');
+        const icon = document.getElementById('btnMinimizeHud');
+        if (isHudMinimized) {
+          hudBody.classList.add('hidden');
+          icon.innerHTML = '<i data-lucide="chevron-down" class="w-3.5 h-3.5"></i>';
+        } else {
+          hudBody.classList.remove('hidden');
+          icon.innerHTML = '<i data-lucide="chevron-up" class="w-3.5 h-3.5"></i>';
+        }
+        lucide.createIcons();
+      });
+
+      const polarSlider = document.getElementById('polarTwsSlider');
+      polarSlider.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value);
+        document.getElementById('polarTwsLabel').innerText = `${val} kn Wind`;
+        document.getElementById('polarTwsSliderVal').innerText = `${val} kn`;
+        drawPolarDiagramCanvas(val);
+      });
+
+      document.getElementById('stepTimeSlider').addEventListener('input', (e) => {
+        document.getElementById('stepTimeLabel').innerText = `${e.target.value} min`;
+      });
+      document.getElementById('fanWidthSlider').addEventListener('input', (e) => {
+        document.getElementById('fanWidthLabel').innerText = `±${e.target.value}°`;
+      });
+      document.getElementById('raysPerNodeSlider').addEventListener('input', (e) => {
+        document.getElementById('raysPerNodeLabel').innerText = `${e.target.value} Strahlen`;
+      });
+      document.getElementById('sectorBinsSlider').addEventListener('input', (e) => {
+        document.getElementById('sectorBinsLabel').innerText = `${e.target.value} Sektoren`;
+      });
+
+      document.getElementById('btnExportGpx').addEventListener('click', exportGpxFile);
+
+      const now = new Date();
+      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+      document.getElementById('departureTime').value = now.toISOString().slice(0, 16);
+
+      lucide.createIcons();
+      initVoyageScrubber();
+      drawPolarDiagramCanvas(16);
+      loadPreset('helgoland');
+    });
+  </script>
+</body>
+</html>
