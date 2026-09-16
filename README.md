@@ -155,6 +155,20 @@ After that first setup, every merge to `main` redeploys automatically.
   40% of polar performance. Applied everywhere `getDehlerBoatSpeed` is
   used in the solver, including the final "connect to the exact waypoint"
   segment.
+- **Leeway (Abtrift)**: distinct from current set/drift (which was already
+  modeled via vector addition of boat velocity + current velocity) —
+  leeway is the sideways slip of the hull through the water caused by wind
+  pressure on the sails. `polar.js#getLeewayAngle` estimates it with the
+  standard small-craft rule of thumb (`K × TWS / STW²`, tapering to zero
+  past ~100° TWA since leeway matters close-hauled/reaching and is
+  negligible running), and `routing.js` rotates the boat's through-water
+  track toward whichever side is downwind of the bow by that angle
+  *before* combining it with current — so the reported COG/SOG reflect
+  both effects together, while the reported heading stays the steered
+  compass heading. Shown per leg as "Abtrift". Not user-configurable (it's
+  a physical boat characteristic, not a preference) and not applied to the
+  final "connect to the exact waypoint" segment, whose position is pinned
+  to the target regardless of heading.
 
 ## Notes on production readiness
 

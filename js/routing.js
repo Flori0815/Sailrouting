@@ -1,5 +1,5 @@
 import { calculateDistanceNm, calculateBearingDeg, projectPosition, isSegmentNavigable } from './geo.js';
-import { getDehlerBoatSpeed } from './polar.js';
+import { getDehlerBoatSpeed, getLeewayAngle } from './polar.js';
 import { fetchMetoceanData } from './metocean.js';
 import { getWaveSpeedFactor } from './waves.js';
 import { NO_GO_ANGLE_DEG } from './constants.js';
@@ -20,6 +20,16 @@ function lookupReferenceHeading(referencePath, timeHours) {
     if (referencePath[mid].timeHours <= timeHours) lo = mid; else hi = mid - 1;
   }
   return referencePath[lo].heading;
+}
+
+// Wind pressure on the sails pushes the hull sideways, so the boat's
+// actual through-water track differs from its steered compass heading by
+// the leeway angle, toward whichever side is downwind of the bow.
+function applyLeeway(heading, twd, leewayDeg) {
+  if (leewayDeg <= 0) return heading;
+  const relBearing = ((twd - heading + 540) % 360) - 180; // (-180, 180]: where the wind source sits relative to the bow
+  const sign = relBearing > 0 ? -1 : 1; // wind from starboard -> pushed to port, and vice versa
+  return (heading + sign * leewayDeg + 360) % 360;
 }
 
 // Isochrone (wavefront) passage solver with loop-free spatial dominance:
@@ -58,6 +68,7 @@ export async function solveIsochronePassage(fromCoord, toCoord, startTime, confi
     curDir: initialMet.curDir,
     waveHeight: initialMet.waveHeight,
     waveDir: initialMet.waveDir,
+    leewayDeg: 0,
     distToGoal: legDist,
     stepIndex: 0
   }];
@@ -134,8 +145,14 @@ export async function solveIsochronePassage(fromCoord, toCoord, startTime, confi
         const waveFactor = getWaveSpeedFactor(met.waveHeight, met.waveDir, heading, config.waveSensitivity);
         const stw = +(getDehlerBoatSpeed(twa, met.tws) * waveFactor).toFixed(2);
 
-        // Current triangle: V_ground = V_boat + V_current
-        const hRad = heading * Math.PI / 180;
+        // Leeway: wind pressure on the sails slips the hull sideways, so
+        // the track actually made through the water differs from the
+        // steered heading — distinct from (and combined with) current set.
+        const leewayDeg = getLeewayAngle(twa, met.tws, stw);
+        const trackThroughWater = applyLeeway(heading, met.twd, leewayDeg);
+
+        // Current triangle: V_ground = V_boat(through water) + V_current
+        const hRad = trackThroughWater * Math.PI / 180;
         const cRad = met.curDir * Math.PI / 180;
         const vx = stw * Math.sin(hRad) + met.curSpeed * Math.sin(cRad);
         const vy = stw * Math.cos(hRad) + met.curSpeed * Math.cos(cRad);
@@ -179,6 +196,7 @@ export async function solveIsochronePassage(fromCoord, toCoord, startTime, confi
           curDir: met.curDir,
           waveHeight: met.waveHeight,
           waveDir: met.waveDir,
+          leewayDeg,
           distToGoal: nextDistToGoal,
           stepIndex: step + 1
         });
@@ -308,6 +326,11 @@ export async function solveIsochronePassage(fromCoord, toCoord, startTime, confi
       curDir: last.curDir,
       waveHeight: last.waveHeight,
       waveDir: last.waveDir,
+      // Not modeled here: this segment's cog/position are pinned to the
+      // exact target waypoint regardless of heading (it just closes the
+      // isochrone step-size gap), so there is no steering angle for leeway
+      // to meaningfully act on the way there is in the main search.
+      leewayDeg: 0,
       distToGoal: 0
     });
   }

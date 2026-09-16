@@ -93,6 +93,7 @@ export async function computeFullRoute(waypoints, departureTime, config, avoidZo
         currentDir: nB.curDir,
         waveHeight: nB.waveHeight,
         waveDir: nB.waveDir,
+        leewayDeg: nB.leewayDeg,
         stw: nB.stw,
         sog: nB.sog,
         durationHours: legDur,
