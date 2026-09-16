@@ -4,6 +4,7 @@ import { solveIsochronePassage } from './routing.js';
 import { clearIsochroneLayers, drawIsochroneVisualsOnMap } from './mapLayers.js';
 import { renderRouteResults } from './results.js';
 import { showToast, toggleSidebar, switchTab } from './ui.js';
+import { setFieldTime } from './particleField.js';
 
 export function readOptimizerConfig() {
   return {
@@ -28,6 +29,14 @@ export function getDepartureTimeFromInput() {
  */
 export async function computeFullRoute(waypoints, departureTime, config, avoidZones, onWarning) {
   const fullRoutePoints = [];
+  // Elapsed hours since departureTime for each entry in fullRoutePoints —
+  // NOT simply the point's index, because a multi-waypoint route inserts an
+  // extra "arrived at waypoint" point at every interior waypoint (the end
+  // of one leg and the start of the next both land on the same coordinate),
+  // so consecutive points do not represent equal time spans. Interpolating
+  // the voyage playback by point index instead of this real elapsed time is
+  // what made the animated boat appear to stall at waypoints.
+  const routePointTimes = [];
   const fullLegs = [];
   let currentDeparture = new Date(departureTime);
   let totalDist = 0;
@@ -58,6 +67,8 @@ export async function computeFullRoute(waypoints, departureTime, config, avoidZo
       let twa = Math.abs(nA.twd - cog) % 360;
       if (twa > 180) twa = 360 - twa;
 
+      const elapsedStart = (currentDeparture.getTime() - departureTime.getTime()) / 3600000;
+
       fullLegs.push({
         index: fullLegs.length + 1,
         fromCoord: [nA.lat, nA.lon],
@@ -74,24 +85,28 @@ export async function computeFullRoute(waypoints, departureTime, config, avoidZo
         stw: nA.stw,
         sog: nA.sog,
         durationHours: legDur,
+        elapsedStart,
         isBeating: twa < 44,
         tackSide: (cog - nA.twd + 360) % 360 > 180 ? 'Steuerbordbug' : 'Backbordbug',
         depTime: new Date(currentDeparture)
       });
 
       fullRoutePoints.push([nA.lat, nA.lon]);
+      routePointTimes.push(elapsedStart);
       totalDist += d;
       totalDurationHrs += legDur;
       currentDeparture = new Date(currentDeparture.getTime() + legDur * 3600 * 1000);
     }
 
     fullRoutePoints.push(p2);
+    routePointTimes.push((currentDeparture.getTime() - departureTime.getTime()) / 3600000);
   }
 
   if (fullRoutePoints.length < 2) return null;
 
   return {
     routePoints: fullRoutePoints,
+    routePointTimes,
     legs: fullLegs,
     totalDistance: +totalDist.toFixed(1),
     totalHours: +totalDurationHrs.toFixed(2),
@@ -109,6 +124,10 @@ export function applyRouteResult(result) {
   state.calculatedRouteData = result;
   drawIsochroneVisualsOnMap(result);
   renderRouteResults(result);
+  // Sync the animated wind/current field to the start of this voyage so it
+  // isn't left showing live "now" conditions for a route that may depart
+  // hours from now — the timeline scrubber further syncs it as it's moved.
+  setFieldTime(result.departureTime);
 }
 
 export async function triggerIsochroneRouteOptimization() {
