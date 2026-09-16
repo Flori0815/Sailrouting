@@ -231,7 +231,17 @@ export async function solveIsochronePassage(fromCoord, toCoord, startTime, confi
       }
     }
 
-    frontier = Array.from(bins.values()).map(item => item.candidate);
+    const newFrontier = Array.from(bins.values()).map(item => item.candidate);
+    if (newFrontier.length === 0) {
+      // Every candidate this step fell outside the sector-binning tolerance
+      // window around the leg's original bearing (most likely with a
+      // narrowed, reference-biased refinement-pass fan that has drifted
+      // away from it) — stop advancing and keep the previous frontier for
+      // the fallback below instead of continuing with an empty one, which
+      // would crash trying to read .distToGoal off nothing.
+      break;
+    }
+    frontier = newFrontier;
 
     frontier.forEach(n => {
       if (n.parent) {
