@@ -126,6 +126,15 @@
             <span id="hudSog">6.8</span> kn
           </div>
         </div>
+
+        <div class="bg-marine-900/80 p-1.5 rounded-lg border border-slate-800 col-span-2">
+          <div class="text-[10px] text-slate-400">Wellenhöhe / -richtung</div>
+          <div class="font-mono font-bold text-violet-300 flex items-center gap-1">
+            <span id="hudWaveHeight">0.4</span> m
+            <span id="hudWaveArrow" class="inline-block transform transition-transform">↓</span>
+            <span id="hudWaveDir" class="text-slate-300 text-[10px]">240°</span>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -275,7 +284,7 @@
             <span id="stepTimeSliderLabel">Zeitschritt (&Delta;t):</span>
             <span class="font-mono text-sky-400 font-bold" id="stepTimeLabel">20 min</span>
           </div>
-          <input id="stepTimeSlider" type="range" min="5" max="45" value="20" step="5" aria-labelledby="stepTimeSliderLabel" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-400">
+          <input id="stepTimeSlider" type="range" min="2" max="45" value="20" step="1" aria-labelledby="stepTimeSliderLabel" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-400">
         </div>
 
         <div>
@@ -283,7 +292,7 @@
             <span id="fanWidthSliderLabel">Fächerbreite (Fan Width):</span>
             <span class="font-mono text-sky-400 font-bold" id="fanWidthLabel">&plusmn;55&deg;</span>
           </div>
-          <input id="fanWidthSlider" type="range" min="30" max="75" value="55" step="5" aria-labelledby="fanWidthSliderLabel" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-400">
+          <input id="fanWidthSlider" type="range" min="30" max="90" value="55" step="5" aria-labelledby="fanWidthSliderLabel" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-400">
         </div>
 
         <div>
@@ -291,7 +300,7 @@
             <span id="raysPerNodeSliderLabel">Strahlen pro Knoten:</span>
             <span class="font-mono text-sky-400 font-bold" id="raysPerNodeLabel">11 Strahlen</span>
           </div>
-          <input id="raysPerNodeSlider" type="range" min="7" max="19" value="11" step="2" aria-labelledby="raysPerNodeSliderLabel" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-400">
+          <input id="raysPerNodeSlider" type="range" min="7" max="31" value="11" step="2" aria-labelledby="raysPerNodeSliderLabel" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-400">
         </div>
 
         <div>
@@ -299,7 +308,21 @@
             <span id="sectorBinsSliderLabel">Wellenfront-Sektoren:</span>
             <span class="font-mono text-sky-400 font-bold" id="sectorBinsLabel">24 Sektoren</span>
           </div>
-          <input id="sectorBinsSlider" type="range" min="16" max="48" value="24" step="4" aria-labelledby="sectorBinsSliderLabel" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-400">
+          <input id="sectorBinsSlider" type="range" min="16" max="96" value="24" step="4" aria-labelledby="sectorBinsSliderLabel" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-400">
+        </div>
+
+        <div class="pt-2 border-t border-slate-800">
+          <div class="flex justify-between text-slate-300 mb-1">
+            <span id="refinementPassesSliderLabel" class="flex items-center gap-1.5">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-emerald-400"></i>
+              Verfeinerungs-Durchläufe:
+            </span>
+            <span class="font-mono text-emerald-400 font-bold" id="refinementPassesLabel">1 (aus)</span>
+          </div>
+          <input id="refinementPassesSlider" type="range" min="1" max="3" value="1" step="1" aria-labelledby="refinementPassesSliderLabel" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-400">
+          <p class="text-[10px] text-slate-500 mt-1 leading-relaxed">
+            Jeder weitere Durchlauf verfeinert die Wellenfronten der vorherigen Generation mit engerem Fächer und höherer Auflösung — genauer, aber langsamer.
+          </p>
         </div>
 
         <div class="flex items-center justify-between pt-2 border-t border-slate-800">
@@ -311,6 +334,20 @@
           <label class="text-slate-300" for="checkShowRays">Such-Strahlenbaum anzeigen:</label>
           <input id="checkShowRays" type="checkbox" checked class="w-4 h-4 rounded text-sky-500 focus:ring-0 cursor-pointer">
         </div>
+      </div>
+
+      <div class="bg-marine-900/80 p-3 rounded-xl border border-slate-800 space-y-1.5">
+        <div class="flex justify-between text-slate-300 mb-1 text-xs">
+          <span id="waveSensitivitySliderLabel" class="flex items-center gap-1.5">
+            <i data-lucide="waves" class="w-3.5 h-3.5 text-violet-400"></i>
+            Wellenempfindlichkeit:
+          </span>
+          <span class="font-mono text-violet-400 font-bold" id="waveSensitivityLabel">50%</span>
+        </div>
+        <input id="waveSensitivitySlider" type="range" min="0" max="100" value="50" step="5" aria-labelledby="waveSensitivitySliderLabel" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-violet-400">
+        <p class="text-[11px] text-slate-400 leading-relaxed">
+          Wie stark Wellenhöhe und -richtung die Bootsgeschwindigkeit bremsen. Seegang von vorne bremst am stärksten, von achtern am wenigsten. 0% = ignorieren.
+        </p>
       </div>
     </div>
 

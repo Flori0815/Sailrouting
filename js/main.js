@@ -187,6 +187,13 @@ function wireControls() {
   document.getElementById('sectorBinsSlider').addEventListener('input', (e) => {
     document.getElementById('sectorBinsLabel').textContent = `${e.target.value} Sektoren`;
   });
+  document.getElementById('refinementPassesSlider').addEventListener('input', (e) => {
+    const val = parseInt(e.target.value, 10);
+    document.getElementById('refinementPassesLabel').textContent = val === 1 ? '1 (aus)' : `${val}`;
+  });
+  document.getElementById('waveSensitivitySlider').addEventListener('input', (e) => {
+    document.getElementById('waveSensitivityLabel').textContent = `${e.target.value}%`;
+  });
 
   document.getElementById('btnExportGpx').addEventListener('click', exportGpxFile);
 }

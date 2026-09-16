@@ -9,6 +9,13 @@ export function updateHudDisplay(leg) {
 
   document.getElementById('hudStw').textContent = leg.stw;
   document.getElementById('hudSog').textContent = leg.sog;
+
+  const hudWaveHeight = document.getElementById('hudWaveHeight');
+  if (hudWaveHeight) {
+    hudWaveHeight.textContent = leg.waveHeight ?? '–';
+    document.getElementById('hudWaveDir').textContent = leg.waveDir !== undefined ? `${leg.waveDir}°` : '–';
+    document.getElementById('hudWaveArrow').style.transform = `rotate(${leg.waveDir ?? 0}deg)`;
+  }
 }
 
 function buildLegCard(leg) {
@@ -48,7 +55,8 @@ function buildLegCard(leg) {
     ['Zeit: ', `${legDurHrs}h ${legDurMins}m`],
     ['Wind: ', `${leg.tws}k @ ${leg.twd}°`, 'text-sky-300'],
     ['TWA: ', `${leg.twa}°`, 'text-sky-300'],
-    ['Strom: ', `${leg.currentSpeed}k → ${leg.currentDir}°`, 'text-emerald-300']
+    ['Strom: ', `${leg.currentSpeed}k → ${leg.currentDir}°`, 'text-emerald-300'],
+    ['Welle: ', `${leg.waveHeight ?? '–'}m @ ${leg.waveDir ?? '–'}°`, 'text-violet-300']
   ];
 
   cells.forEach(([label, value, strongClass]) => {
