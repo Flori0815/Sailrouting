@@ -1,17 +1,43 @@
 import { calculateDistanceNm, calculateBearingDeg, projectPosition, isSegmentNavigable } from './geo.js';
 import { getDehlerBoatSpeed } from './polar.js';
 import { fetchMetoceanData } from './metocean.js';
+import { getWaveSpeedFactor } from './waves.js';
 import { NO_GO_ANGLE_DEG } from './constants.js';
+
+// Upper bound on isochrone steps regardless of settings. Sized generously
+// so a fine time step on a long leg doesn't get silently truncated before
+// reaching the goal — the loop still exits as soon as it arrives.
+const MAX_ISOCHRONE_STEPS = 220;
+
+// Finds the reference path entry (from a previous refinement pass) whose
+// timeHours is closest to (and not after) the given time, so a later pass
+// can bias its search fan toward where the earlier pass actually sailed.
+function lookupReferenceHeading(referencePath, timeHours) {
+  if (!referencePath || referencePath.length === 0) return null;
+  let lo = 0, hi = referencePath.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (referencePath[mid].timeHours <= timeHours) lo = mid; else hi = mid - 1;
+  }
+  return referencePath[lo].heading;
+}
 
 // Isochrone (wavefront) passage solver with loop-free spatial dominance:
 // a 2D grid rejects any candidate that revisits a nautical cell already
 // reached at an earlier or equal simulated time, which prevents the
 // search from folding back on itself.
-export async function solveIsochronePassage(fromCoord, toCoord, startTime, config, avoidZones) {
+//
+// `referencePath` (optional) is a previous pass's pathNodes reduced to
+// {timeHours, heading} — when supplied, the reaching/running fan is
+// centered toward the heading the previous pass actually sailed at the
+// corresponding time instead of purely the live direct-to-goal bearing,
+// letting a follow-up pass refine the wavefronts around an
+// already-reasonable solution rather than resampling from scratch.
+export async function solveIsochronePassage(fromCoord, toCoord, startTime, config, avoidZones, referencePath = null) {
   const legDist = calculateDistanceNm(fromCoord[0], fromCoord[1], toCoord[0], toCoord[1]);
   const dtHours = config.dtMinutes / 60;
   const legBearing = calculateBearingDeg(fromCoord[0], fromCoord[1], toCoord[0], toCoord[1]);
-  const maxSteps = Math.min(65, Math.ceil((legDist / 3.5) / dtHours) + 12);
+  const maxSteps = Math.min(MAX_ISOCHRONE_STEPS, Math.ceil((legDist / 3.5) / dtHours) + 12);
 
   const initialMet = await fetchMetoceanData(fromCoord[0], fromCoord[1], startTime);
 
@@ -30,6 +56,8 @@ export async function solveIsochronePassage(fromCoord, toCoord, startTime, confi
     twa: 90,
     curSpeed: initialMet.curSpeed,
     curDir: initialMet.curDir,
+    waveHeight: initialMet.waveHeight,
+    waveDir: initialMet.waveDir,
     distToGoal: legDist,
     stepIndex: 0
   }];
@@ -79,10 +107,21 @@ export async function solveIsochronePassage(fromCoord, toCoord, startTime, confi
         candidateHeadings.push((stbdTack - 8 + 360) % 360, (stbdTack + 8) % 360);
         candidateHeadings.push((portTack - 8 + 360) % 360, (portTack + 8) % 360);
       } else {
-        // Reaching / running: fan out symmetrically around the direct bearing
+        // Reaching / running: fan out around the direct bearing, biased
+        // toward a previous pass's actual heading at this point in time
+        // when one is available (see solveIsochronePassageRefined).
+        let fanCenter = directBearing;
+        const refHeading = lookupReferenceHeading(referencePath, node.timeHours);
+        if (refHeading !== null) {
+          const diff = ((refHeading - directBearing + 540) % 360) - 180;
+          if (Math.abs(diff) < 90) {
+            fanCenter = (directBearing + diff * 0.7 + 360) % 360;
+          }
+        }
+
         const stepDeg = (halfFan * 2) / Math.max(1, config.numRaysPerNode - 1);
         for (let r = 0; r < config.numRaysPerNode; r++) {
-          const hdg = Math.round((directBearing - halfFan + r * stepDeg + 360) % 360);
+          const hdg = Math.round((fanCenter - halfFan + r * stepDeg + 360) % 360);
           candidateHeadings.push(hdg);
         }
       }
@@ -92,7 +131,8 @@ export async function solveIsochronePassage(fromCoord, toCoord, startTime, confi
         if (twa > 180) twa = 360 - twa;
         if (twa < NO_GO_ANGLE_DEG) continue;
 
-        const stw = getDehlerBoatSpeed(twa, met.tws);
+        const waveFactor = getWaveSpeedFactor(met.waveHeight, met.waveDir, heading, config.waveSensitivity);
+        const stw = getDehlerBoatSpeed(twa, met.tws) * waveFactor;
 
         // Current triangle: V_ground = V_boat + V_current
         const hRad = heading * Math.PI / 180;
@@ -137,6 +177,8 @@ export async function solveIsochronePassage(fromCoord, toCoord, startTime, confi
           twa: Math.round(twa),
           curSpeed: met.curSpeed,
           curDir: met.curDir,
+          waveHeight: met.waveHeight,
+          waveDir: met.waveDir,
           distToGoal: nextDistToGoal,
           stepIndex: step + 1
         });
@@ -239,7 +281,8 @@ export async function solveIsochronePassage(fromCoord, toCoord, startTime, confi
     const finalBrg = calculateBearingDeg(last.lat, last.lon, toCoord[0], toCoord[1]);
     let finalTwa = Math.abs(last.twd - finalBrg) % 360;
     if (finalTwa > 180) finalTwa = 360 - finalTwa;
-    const finalStw = getDehlerBoatSpeed(finalTwa, last.tws);
+    const finalWaveFactor = getWaveSpeedFactor(last.waveHeight, last.waveDir, finalBrg, config.waveSensitivity);
+    const finalStw = getDehlerBoatSpeed(finalTwa, last.tws) * finalWaveFactor;
 
     const hRad = finalBrg * Math.PI / 180;
     const cRad = last.curDir * Math.PI / 180;
@@ -263,6 +306,8 @@ export async function solveIsochronePassage(fromCoord, toCoord, startTime, confi
       twa: Math.round(finalTwa),
       curSpeed: last.curSpeed,
       curDir: last.curDir,
+      waveHeight: last.waveHeight,
+      waveDir: last.waveDir,
       distToGoal: 0
     });
   }
@@ -272,4 +317,34 @@ export async function solveIsochronePassage(fromCoord, toCoord, startTime, confi
     allRays: sampledRays,
     isochroneWavefronts: cleanWavefronts
   };
+}
+
+// Runs solveIsochronePassage for 1-3 passes, each subsequent pass narrowing
+// the search fan and raising ray/sector resolution while biasing candidate
+// headings toward where the previous pass actually sailed (see
+// lookupReferenceHeading above) — a "next generation of wavefronts" that
+// refines the route around an already-reasonable solution instead of
+// resampling the whole search space from scratch every time.
+export async function solveIsochronePassageRefined(fromCoord, toCoord, startTime, config, avoidZones, passes = 1) {
+  const totalPasses = Math.max(1, Math.min(3, Math.round(passes)));
+  let referencePath = null;
+  let result = null;
+
+  for (let pass = 0; pass < totalPasses; pass++) {
+    const passConfig = pass === 0
+      ? config
+      : {
+          ...config,
+          fanWidthDeg: Math.max(15, Math.round(config.fanWidthDeg * 0.5)),
+          numRaysPerNode: Math.min(31, config.numRaysPerNode + 6),
+          numSectors: Math.min(96, config.numSectors * 2)
+        };
+
+    result = await solveIsochronePassage(fromCoord, toCoord, startTime, passConfig, avoidZones, referencePath);
+    if (!result || !result.pathNodes || result.pathNodes.length < 2) return result;
+
+    referencePath = result.pathNodes.map(n => ({ timeHours: n.timeHours, heading: n.heading }));
+  }
+
+  return result;
 }

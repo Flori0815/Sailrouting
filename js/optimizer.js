@@ -1,6 +1,6 @@
 import { state } from './state.js';
 import { calculateDistanceNm, calculateBearingDeg } from './geo.js';
-import { solveIsochronePassage } from './routing.js';
+import { solveIsochronePassageRefined } from './routing.js';
 import { clearIsochroneLayers, drawIsochroneVisualsOnMap } from './mapLayers.js';
 import { renderRouteResults } from './results.js';
 import { showToast, toggleSidebar, switchTab } from './ui.js';
@@ -12,7 +12,9 @@ export function readOptimizerConfig() {
     fanWidthDeg: parseInt(document.getElementById('fanWidthSlider').value, 10) || 55,
     numRaysPerNode: parseInt(document.getElementById('raysPerNodeSlider').value, 10) || 11,
     numSectors: parseInt(document.getElementById('sectorBinsSlider').value, 10) || 24,
-    strategy: document.getElementById('routingStrategy').value
+    strategy: document.getElementById('routingStrategy').value,
+    refinementPasses: parseInt(document.getElementById('refinementPassesSlider')?.value, 10) || 1,
+    waveSensitivity: parseInt(document.getElementById('waveSensitivitySlider')?.value, 10) || 0
   };
 }
 
@@ -48,7 +50,7 @@ export async function computeFullRoute(waypoints, departureTime, config, avoidZo
     const p1 = [waypoints[w].lat, waypoints[w].lng];
     const p2 = [waypoints[w + 1].lat, waypoints[w + 1].lng];
 
-    const sol = await solveIsochronePassage(p1, p2, currentDeparture, config, avoidZones);
+    const sol = await solveIsochronePassageRefined(p1, p2, currentDeparture, config, avoidZones, config.refinementPasses);
     if (!sol || !sol.pathNodes || sol.pathNodes.length < 2) {
       onWarning?.(`Kein sicherer Weg zwischen WP${w} und WP${w + 1}`);
       continue;
@@ -89,6 +91,8 @@ export async function computeFullRoute(waypoints, departureTime, config, avoidZo
         twa: Math.round(twa),
         currentSpeed: nB.curSpeed,
         currentDir: nB.curDir,
+        waveHeight: nB.waveHeight,
+        waveDir: nB.waveDir,
         stw: nB.stw,
         sog: nB.sog,
         durationHours: legDur,

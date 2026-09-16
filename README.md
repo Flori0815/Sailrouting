@@ -32,9 +32,10 @@ js/
   voyage.js                    Timeline scrubber / playback
   gpx.js                        GPX export
   optimizer.js                  Pure route computation + orchestrates a run
-  particleField.js                Animated wind/current particle overlay
-  departureWindow.js               Compares routes across a ±X hour window
-  main.js                           Entry point: map init + event wiring
+  waves.js                       Directional wave-height speed-penalty model
+  particleField.js                 Animated wind/current particle overlay
+  departureWindow.js                Compares routes across a ±X hour window
+  main.js                            Entry point: map init + event wiring
 ```
 
 Everything is loaded as native ES modules (`<script type="module">`), so
@@ -112,6 +113,41 @@ After that first setup, every merge to `main` redeploys automatically.
   speed honestly for its actual bearing instead of reusing the previous
   node's speed, so a leg pointed into the wind now correctly shows the
   boat crawling at its no-go-zone speed rather than cruising normally.
+
+## Solver quality, multi-pass refinement, and waves
+
+- **Higher-resolution search settings** (Isochronen tab): the time-step,
+  fan-width, rays-per-node, and wavefront-sector sliders now go
+  meaningfully higher (down to a 2-minute step, up to 31 rays and 96
+  sectors) for a finer, more accurate search at the cost of more
+  computation. `routing.js`'s internal step cap was also raised (65 → 220)
+  so a fine time step on a long leg no longer gets silently truncated
+  before reaching the goal.
+- **Verfeinerungs-Durchläufe (refinement passes)**: `solveIsochronePassage`
+  can take an optional reference path (a previous pass's node headings by
+  elapsed time) and biases its reaching/running search fan toward it.
+  `solveIsochronePassageRefined` in `routing.js` uses this to run 1-3
+  passes, each one narrowing the fan and raising ray/sector resolution
+  while seeding from the previous pass's actual route — a "next
+  generation" of wavefronts refined around an already-reasonable solution
+  instead of resampling from scratch. Defaults to 1 (off, matching prior
+  behavior); in one measured case a dead-upwind leg went from 7.07h
+  (single pass) to 3.18h (3 passes) — close to the theoretical optimal
+  tacking VMG time — by escaping suboptimal choices baked in by the
+  single-pass sector-binning search.
+- **Wave height & direction**: `metocean.js`'s existing marine-API call
+  also requests `wave_height`/`wave_direction` (no extra request — bundled
+  into the current/wave fetch), threaded through every isochrone node and
+  leg alongside wind/current, and shown in the weather HUD and each leg
+  card.
+- **Wellenempfindlichkeit (wave sensitivity)**: a 0-100% slider (Isochronen
+  tab, default 50%) controls `waves.js#getWaveSpeedFactor`, which reduces
+  boat speed by wave height (scaled up to a 2.5m reference height) and by
+  the wave's angle relative to the boat's heading — head seas cut speed
+  the most, following seas the least — floored so speed never drops below
+  40% of polar performance. Applied everywhere `getDehlerBoatSpeed` is
+  used in the solver, including the final "connect to the exact waypoint"
+  segment.
 
 ## Notes on production readiness
 
