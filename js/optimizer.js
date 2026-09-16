@@ -64,7 +64,14 @@ export async function computeFullRoute(waypoints, departureTime, config, avoidZo
       const cog = calculateBearingDeg(nA.lat, nA.lon, nB.lat, nB.lon);
       const legDur = nB.timeHours - nA.timeHours;
 
-      let twa = Math.abs(nA.twd - cog) % 360;
+      // nB — not nA — is the node whose stored heading/tws/twd/stw/sog
+      // describe this segment: each node's fields record the hop that
+      // *arrived* at it (set when it was created as a candidate for the
+      // nA -> nB move). Pairing nA's fields with this segment's geometry
+      // mismatched a leg's displayed speed/heading with the previous hop's,
+      // which could show an implausible TWA/speed combination (even a
+      // no-go-zone angle at full cruising speed) right at a tack.
+      let twa = Math.abs(nB.twd - cog) % 360;
       if (twa > 180) twa = 360 - twa;
 
       const elapsedStart = (currentDeparture.getTime() - departureTime.getTime()) / 3600000;
@@ -76,18 +83,18 @@ export async function computeFullRoute(waypoints, departureTime, config, avoidZo
         midCoord: [(nA.lat + nB.lat) / 2, (nA.lon + nB.lon) / 2],
         distance: +d.toFixed(2),
         cog: Math.round(cog),
-        heading: nA.heading,
-        tws: nA.tws,
-        twd: nA.twd,
+        heading: nB.heading,
+        tws: nB.tws,
+        twd: nB.twd,
         twa: Math.round(twa),
-        currentSpeed: nA.curSpeed,
-        currentDir: nA.curDir,
-        stw: nA.stw,
-        sog: nA.sog,
+        currentSpeed: nB.curSpeed,
+        currentDir: nB.curDir,
+        stw: nB.stw,
+        sog: nB.sog,
         durationHours: legDur,
         elapsedStart,
         isBeating: twa < 44,
-        tackSide: (cog - nA.twd + 360) % 360 > 180 ? 'Steuerbordbug' : 'Backbordbug',
+        tackSide: (cog - nB.twd + 360) % 360 > 180 ? 'Steuerbordbug' : 'Backbordbug',
         depTime: new Date(currentDeparture)
       });
 
