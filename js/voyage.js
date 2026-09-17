@@ -1,6 +1,7 @@
 import { state } from './state.js';
 import { updateHudDisplay } from './results.js';
 import { setFieldTime } from './particleField.js';
+import { setBshWmsTime } from './bshWmsLayer.js';
 
 // Finds the largest index i such that times[i] <= target, clamped to
 // [0, times.length - 2] so callers can always safely read times[i + 1].
@@ -69,7 +70,12 @@ export function initVoyageScrubber() {
     // Keep the animated wind/current field in sync with where the boat is
     // in the voyage timeline, instead of it always showing live "now"
     // conditions regardless of how far the scrubber has been moved.
-    setFieldTime(new Date(data.departureTime.getTime() + targetHours * 3600 * 1000));
+    const scrubTime = new Date(data.departureTime.getTime() + targetHours * 3600 * 1000);
+    setFieldTime(scrubTime);
+    // Same for the BSH WMS current overlay's time dimension, if it's shown
+    // and the server declares one — a tidal current field reverses with
+    // the tide, so this needs to track voyage time too, not just "now".
+    setBshWmsTime(scrubTime);
 
     const elH = Math.floor(targetHours);
     const elM = Math.round((targetHours - elH) * 60);
