@@ -310,6 +310,35 @@ After that first setup, every merge to `main` redeploys automatically.
   magnitude arrow style) and this project's sandbox can't tell in advance
   which ones exist or which looks best, so the picker lets a sailor try
   them directly.
+- **Fixed: the current overlay showing only plain dots, even after
+  switching styles**. A tidal current field is inherently time-varying —
+  it reverses with the tide — so a WMS layer for it almost always
+  declares a "time" `<Dimension>` in its capabilities; the GetMap
+  requests `js/bshWmsLayer.js` sent never included it. Omitting a
+  dimension a server declares isn't reliably an error — a server can
+  silently fall back to some default/empty rendering instead (e.g. a bare
+  station-location marker with no vector drawn), which would look exactly
+  like "just dots, the values are missing" regardless of which `Style` is
+  picked, since the picker only changes `STYLES=`, not the missing
+  dimension. `bshWmsLayer.js` now parses every `<Dimension>` a layer
+  declares and sends each one in the GetMap request: standard `time`/
+  `elevation` dimensions as bare `TIME=`/`ELEVATION=` params, any other
+  custom dimension prefixed `DIM_` per the WMS 1.3.0 spec — snapping a
+  `time` dimension declared as a discrete list to the closest advertised
+  entry, or handing an interval-declared one straight through as an ISO
+  instant (servers snap those to the nearest valid step themselves). The
+  desired time is kept in sync with the voyage timeline scrubber
+  (`js/voyage.js`, mirroring the existing particle-field time sync from
+  `setFieldTime`) — live "now" when no route is being scrubbed — so the
+  current field shown actually reflects the tide state at the displayed
+  moment instead of whatever the server defaults to. Verified with a
+  mocked capabilities document declaring an hourly-resolution time
+  interval: the initial GetMap request carries a `TIME=` param, switching
+  style keeps it, and scrubbing the voyage timeline changes it to a
+  different value. Still can't be verified against the real `bsh.de`
+  service from this sandbox, so whether its actual current layer offers
+  a genuine direction/magnitude style — as opposed to only ever having
+  point-symbol styles — remains unconfirmed.
 - **Saved routes (browser localStorage)**: the Wegpunkte tab's
   "Gespeicherte Routen" section lets a sailor save the current waypoints,
   hazard zones, and solver settings (fan width, refinement passes, wave

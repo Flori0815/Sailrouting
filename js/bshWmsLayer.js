@@ -131,11 +131,70 @@ export function isBshWmsLayerVisible() {
 let currentLayerName = null;
 let currentStyleName = null;
 
+// A tidal current field is inherently time-varying (it reverses with the
+// tide), so a WMS layer for it almost always declares a "time" Dimension.
+// A GetMap request that omits a *required* dimension isn't reliably an
+// error — servers commonly fall back to some default/empty rendering
+// instead (e.g. a bare station-location marker with no vector drawn),
+// which would look exactly like the "just dots, values are missing"
+// symptom reported regardless of which Style is picked. This tracks the
+// simulated time the map should reflect (synced from the voyage scrubber
+// when a route is loaded; live "now" otherwise) so every dimension the
+// server actually declares gets a real value instead of being left out.
+let desiredTime = new Date();
+let appliedDimensionParams = null;
+
+// WMS 1.3.0 KVP: the two standard dimensions ("time", "elevation") are
+// sent as bare TIME=/ELEVATION=; any other, custom dimension a server
+// declares must be prefixed DIM_ per the spec.
+function dimensionParamKey(name) {
+  const lower = name.toLowerCase();
+  if (lower === 'time' || lower === 'elevation') return lower.toUpperCase();
+  return `DIM_${name.toUpperCase()}`;
+}
+
+// Resolves one dimension's value for a GetMap request. The <Dimension>
+// element's text content is either a comma-separated list of discrete
+// values or a min/max/period interval (e.g.
+// "2024-01-01T00:00:00Z/2024-01-02T00:00:00Z/PT1H"); for an interval we
+// just hand the server an ISO instant in range (servers snap to the
+// nearest valid step per the WMS spec) — for a discrete list we snap to
+// the closest entry ourselves so the value we send is one the server
+// actually advertised, not one we guessed.
+function resolveDimensionValue(dim, forDate) {
+  const raw = (dim.values || '').trim();
+  if (dim.name.toLowerCase() !== 'time') {
+    return dim.default || raw.split(',')[0]?.trim() || raw.split('/')[0]?.trim() || null;
+  }
+  if (raw.includes('/')) return forDate.toISOString();
+  const entries = raw.split(',').map(s => s.trim()).filter(Boolean);
+  if (entries.length === 0) return dim.default || null;
+  let best = entries[0];
+  let bestDelta = Infinity;
+  for (const entry of entries) {
+    const t = Date.parse(entry);
+    if (Number.isNaN(t)) continue;
+    const delta = Math.abs(t - forDate.getTime());
+    if (delta < bestDelta) { bestDelta = delta; best = entry; }
+  }
+  return best;
+}
+
+function buildDimensionParams(layer, forDate) {
+  const params = {};
+  for (const dim of layer.dimensions || []) {
+    const value = resolveDimensionValue(dim, forDate);
+    if (value) params[dimensionParamKey(dim.name)] = value;
+  }
+  return params;
+}
+
 function addTileLayer(caps, layerName, styleName) {
   const layer = caps.allLayers.find(l => l.name === layerName) || caps.layer;
   const style = styleName ?? (layer.styles[0]?.name ?? '');
   currentLayerName = layer.name;
   currentStyleName = style;
+  appliedDimensionParams = buildDimensionParams(layer, desiredTime);
 
   if (wmsLeafletLayer) state.map.removeLayer(wmsLeafletLayer);
   wmsLeafletLayer = L.tileLayer.wms(caps.getMapUrl, {
@@ -145,10 +204,31 @@ function addTileLayer(caps, layerName, styleName) {
     transparent: true,
     version: '1.3.0',
     opacity: 0.75,
-    attribution: '© BSH Strömungen (bsh.de)'
+    attribution: '© BSH Strömungen (bsh.de)',
+    ...appliedDimensionParams
   });
   wmsLeafletLayer.addTo(state.map);
   return layer;
+}
+
+// Keeps the WMS layer's time-varying dimension(s) synced to wherever the
+// voyage scrubber currently is (mirrors particleField.js#setFieldTime,
+// which does the same for the animated particle overlay) — live "now"
+// when no route is being scrubbed. No-op if the layer isn't shown or
+// doesn't declare a time dimension; cheap no-op if the snapped value
+// hasn't actually changed, so frequent scrubber ticks don't spam the WMS
+// server with a fresh tile request every frame.
+export async function setBshWmsTime(date) {
+  desiredTime = date instanceof Date ? date : new Date(date);
+  if (!wmsLeafletLayer) return;
+  const caps = await getWmsCapabilities().catch(() => null);
+  if (!caps) return;
+  const layer = caps.allLayers.find(l => l.name === currentLayerName) || caps.layer;
+  const nextParams = buildDimensionParams(layer, desiredTime);
+  const changed = Object.keys(nextParams).some(k => nextParams[k] !== appliedDimensionParams?.[k]);
+  if (!changed) return;
+  appliedDimensionParams = nextParams;
+  wmsLeafletLayer.setParams(nextParams);
 }
 
 // Adds the layer, discovering capabilities first if needed. Returns
@@ -184,6 +264,7 @@ export async function setBshWmsSelection(layerName, styleName) {
 }
 
 export function hideBshWmsLayer() {
+  appliedDimensionParams = null;
   if (wmsLeafletLayer) {
     state.map.removeLayer(wmsLeafletLayer);
     wmsLeafletLayer = null;
