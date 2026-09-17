@@ -12,6 +12,7 @@
 // source Open-Meteo has), and there's no single `models=` value that
 // selects the right model for both variables at once.
 import { applyTidalAmplification } from './tidal.js';
+import { peekBshCurrent, warmBshGribCache } from './bshGribCurrent.js';
 
 const FALLBACK = { tws: 14.0, twd: 240, curSpeed: 0.8, curDir: 120, waveHeight: 0.4, waveDir: 240 };
 const FETCH_TIMEOUT_MS = 8000;
@@ -22,7 +23,7 @@ const metoceanCache = new Map();
 // most recently fetched hourly data, so the UI can show the sailor exactly
 // what's backing the numbers and how far forecast coverage actually
 // extends — see js/results.js#renderDataSourcePanel.
-const lastCoverage = { wind: null, marine: null, fetchedAt: null };
+const lastCoverage = { wind: null, marine: null, fetchedAt: null, bshGribActive: false };
 
 export function getDataSourceInfo() {
   return {
@@ -36,11 +37,17 @@ export function getDataSourceInfo() {
       resolution: '~5×7 km, Nordsee/Europa',
       coverage: lastCoverage.marine
     },
-    current: {
-      label: 'Météo-France / Copernicus Marine (SMOC, global)',
-      resolution: '~9 km, inkl. grobem Gezeiten-Anteil (FES2014)',
-      coverage: lastCoverage.marine
-    },
+    current: lastCoverage.bshGribActive
+      ? {
+          label: 'BSH Strömungsvorhersage (GRIB, real U/V)',
+          resolution: '0.5 sm, Deutsche Bucht',
+          coverage: lastCoverage.marine
+        }
+      : {
+          label: 'Météo-France / Copernicus Marine (SMOC, global)',
+          resolution: '~9 km, inkl. grobem Gezeiten-Anteil (FES2014)',
+          coverage: lastCoverage.marine
+        },
     fetchedAt: lastCoverage.fetchedAt
   };
 }
@@ -108,17 +115,32 @@ export async function fetchMetoceanData(lat, lng, targetDate = new Date()) {
 
     lastCoverage.fetchedAt = new Date();
 
+    // Prefer BSH's own real current-vector GRIB data (js/bshGribCurrent.js)
+    // over Open-Meteo's coarse global current model whenever it's already
+    // cached and covers this point/time: it's real modeled U/V, not a
+    // magnitude-only heuristic nudge, so it replaces both the Open-Meteo
+    // current AND the tidal-amplification heuristic below rather than
+    // stacking with either. Synchronous cache peek only (see
+    // js/tidal.js's peekTidePhase for the identical hot-path-safe
+    // pattern) — never blocks this call on a live GRIB fetch/parse; if
+    // nothing is cached yet, this also fires a non-blocking warm-up so a
+    // *later* call can benefit.
+    const bshCurrent = peekBshCurrent(lat, lng, targetDate);
+    lastCoverage.bshGribActive = !!bshCurrent;
+    if (!bshCurrent) warmBshGribCache();
+
     // German Bight/Wadden Sea tidal-stream amplification heuristic — see
     // js/tidal.js for why this exists and what it deliberately does not do
     // (it never touches direction, only magnitude, and only inside the
-    // region it's calibrated for).
-    const tidalAmplifiedCurSpeed = applyTidalAmplification(lat, lng, curSpeed, targetDate);
+    // region it's calibrated for). Skipped entirely when real BSH vector
+    // data is already in use above.
+    const tidalAmplifiedCurSpeed = bshCurrent ? bshCurrent.curSpeed : applyTidalAmplification(lat, lng, curSpeed, targetDate);
 
     const res = {
       tws: +tws.toFixed(1),
       twd: Math.round(twd),
       curSpeed: +tidalAmplifiedCurSpeed.toFixed(1),
-      curDir: Math.round(curDir),
+      curDir: Math.round(bshCurrent ? bshCurrent.curDir : curDir),
       waveHeight: +waveHeight.toFixed(1),
       waveDir: Math.round(waveDir)
     };

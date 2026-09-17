@@ -13,7 +13,7 @@ import { triggerIsochroneRouteOptimization } from './optimizer.js';
 import { initParticleField, setLayerVisible, isLayerVisible, setColorFieldVisible, setColorFieldParam, colorScaleCss } from './particleField.js';
 import { findBestDepartureTime, toggleDepartureVariantsOnMap } from './departureWindow.js';
 import { updateTidalPhaseBadge, renderDataSourcesPanel } from './results.js';
-import { showBshWmsLayer, hideBshWmsLayer, isBshWmsLayerVisible, setBshWmsSelection } from './bshWmsLayer.js';
+import { loadBshGribCurrentNow, isBshGribCurrentLoaded } from './bshGribCurrent.js';
 import { readOptimizerConfig } from './optimizer.js';
 import { saveCurrentRoute, renderSavedRoutesList } from './savedRoutes.js';
 
@@ -172,88 +172,27 @@ function wireControls() {
   });
   refreshColorFieldUI();
 
-  const bshWmsBtn = document.getElementById('btnToggleBshWmsLayer');
-  const bshWmsStatus = document.getElementById('bshWmsStatus');
-  const bshWmsPickerRow = document.getElementById('bshWmsPickerRow');
-  const bshWmsLayerSelect = document.getElementById('bshWmsLayerSelect');
-  const bshWmsStyleSelect = document.getElementById('bshWmsStyleSelect');
-  const BSH_WMS_OFF_CLASS = 'text-[10px] px-2 py-1 rounded-lg border border-slate-700 text-slate-400 bg-marine-900/60 font-semibold active:scale-95 transition-transform';
-  const BSH_WMS_ON_CLASS = 'text-[10px] px-2 py-1 rounded-lg border border-emerald-400/50 text-emerald-300 bg-emerald-500/10 font-semibold active:scale-95 transition-transform';
+  const bshGribBtn = document.getElementById('btnLoadBshGribCurrent');
+  const bshGribStatus = document.getElementById('bshGribStatus');
 
-  function populateBshWmsStyleOptions(allLayers, layerName, styleName) {
-    const layer = allLayers.find(l => l.name === layerName);
-    bshWmsStyleSelect.innerHTML = '';
-    if (!layer || layer.styles.length === 0) {
-      const opt = document.createElement('option');
-      opt.value = '';
-      opt.textContent = 'Standard';
-      bshWmsStyleSelect.appendChild(opt);
-      return;
-    }
-    layer.styles.forEach((s) => {
-      const opt = document.createElement('option');
-      opt.value = s.name;
-      opt.textContent = s.title;
-      bshWmsStyleSelect.appendChild(opt);
-    });
-    bshWmsStyleSelect.value = styleName || layer.styles[0].name;
+  if (isBshGribCurrentLoaded()) {
+    bshGribStatus.textContent = 'BSH-GRIB-Strömungsdaten aktiv (bereits geladen).';
   }
 
-  let bshWmsAllLayers = [];
-
-  function populateBshWmsPickers(result) {
-    bshWmsAllLayers = result.allLayers;
-    bshWmsLayerSelect.innerHTML = '';
-    bshWmsAllLayers.forEach((l) => {
-      const opt = document.createElement('option');
-      opt.value = l.name;
-      opt.textContent = l.title;
-      bshWmsLayerSelect.appendChild(opt);
-    });
-    bshWmsLayerSelect.value = result.currentLayerName;
-    populateBshWmsStyleOptions(bshWmsAllLayers, result.currentLayerName, result.currentStyleName);
-    bshWmsPickerRow.classList.remove('hidden');
-  }
-
-  bshWmsLayerSelect.addEventListener('change', async () => {
-    populateBshWmsStyleOptions(bshWmsAllLayers, bshWmsLayerSelect.value, null);
-    const result = await setBshWmsSelection(bshWmsLayerSelect.value, bshWmsStyleSelect.value);
-    if (result) bshWmsStatus.textContent = `Ebene: ${result.title}`;
-  });
-  bshWmsStyleSelect.addEventListener('change', async () => {
-    const result = await setBshWmsSelection(bshWmsLayerSelect.value, bshWmsStyleSelect.value);
-    if (result) bshWmsStatus.textContent = `Ebene: ${result.title}`;
-  });
-
-  bshWmsBtn.addEventListener('click', async () => {
-    if (isBshWmsLayerVisible()) {
-      hideBshWmsLayer();
-      bshWmsBtn.textContent = 'Aus';
-      bshWmsBtn.setAttribute('aria-pressed', 'false');
-      bshWmsBtn.className = BSH_WMS_OFF_CLASS;
-      bshWmsStatus.textContent = '';
-      bshWmsPickerRow.classList.add('hidden');
-      return;
-    }
-    bshWmsBtn.textContent = 'Lädt…';
-    bshWmsBtn.disabled = true;
-    const result = await showBshWmsLayer();
-    bshWmsBtn.disabled = false;
+  bshGribBtn.addEventListener('click', async () => {
+    bshGribBtn.textContent = 'Lädt…';
+    bshGribBtn.disabled = true;
+    const result = await loadBshGribCurrentNow();
+    bshGribBtn.disabled = false;
+    bshGribBtn.textContent = 'Jetzt laden';
     if (result.ok) {
-      bshWmsBtn.textContent = 'An';
-      bshWmsBtn.setAttribute('aria-pressed', 'true');
-      bshWmsBtn.className = BSH_WMS_ON_CLASS;
-      bshWmsStatus.textContent = result.layerTitle ? `Ebene: ${result.layerTitle}` : '';
-      populateBshWmsPickers(result);
-      showToast('BSH Strömungs-Ebene: Sichtbar', 'emerald');
+      bshGribStatus.textContent = `Aktiv: ${result.timestepCount} Zeitschritte geladen (Deutsche Bucht).`;
+      showToast('BSH-Strömungsdaten (GRIB) geladen', 'emerald');
     } else {
-      bshWmsBtn.textContent = 'Aus';
-      bshWmsBtn.setAttribute('aria-pressed', 'false');
-      bshWmsBtn.className = BSH_WMS_OFF_CLASS;
       // Surfaced directly in the UI (not just the console) so a failure
       // here can be reported back precisely without needing devtools.
-      bshWmsStatus.textContent = `Derzeit nicht erreichbar: ${result.error || 'unbekannter Fehler'}`;
-      showToast('BSH Strömungs-Ebene derzeit nicht verfügbar', 'rose');
+      bshGribStatus.textContent = `Derzeit nicht erreichbar: ${result.error || 'unbekannter Fehler'}`;
+      showToast('BSH-Strömungsdaten (GRIB) derzeit nicht verfügbar', 'rose');
     }
   });
 

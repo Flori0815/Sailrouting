@@ -35,7 +35,8 @@ js/
   waves.js                       Directional wave-height speed-penalty model
   tidal.js                       German Bight/Wadden Sea tidal-current modeling
   bshTides.js                    Real BSH water-level forecast API client
-  bshWmsLayer.js                 BSH current WMS map overlay (experimental, unverified)
+  gribParser.js                   Minimal GRIB2 (WMO binary) reader
+  bshGribCurrent.js                Real BSH current data (GRIB2 U/V vectors)
   savedRoutes.js                 Save/load voyage plans in browser localStorage
   particleField.js                 Animated wind/current particle overlay
   departureWindow.js                Compares routes across a ±X hour window
@@ -289,79 +290,63 @@ After that first setup, every merge to `main` redeploys automatically.
   ocean current) and BSH (real German-coast tidal timing) — both directly
   confirmed working, the second against a real client's source (see
   above).
-- **BSH current map overlay — experimental, unverified**: the Wetter tab's
-  "BSH Strömung" toggle adds BSH's official current-model (BSHcmod,
-  covering tidal + wind + density-driven current, not just tides) as a
-  real WMS map layer — a standard public OGC service meant for exactly
-  this, not a scraped tile format. This project's dev sandbox can't reach
-  `bsh.de`/`gdi.bsh.de` at all, so `js/bshWmsLayer.js` can't be tested
-  end-to-end from here; a first attempt at a single hardcoded capabilities
-  URL 404'd in the field, so this now tries three different documented-
-  looking candidate URLs in order and uses whichever one's capabilities
-  response actually parses, discovering the real layer name from it at
-  runtime rather than guessing that too. If all three still fail, the
-  toggle shows the exact per-candidate error (URL + status/reason) in the
-  UI, not just the console — so a further failure can be diagnosed
-  precisely instead of guessed at again. Purely visual either way — never
-  feeds into the routing calculation. Once visible, an "Ebene"/"Darstellung"
-  (layer/style) picker appears — also discovered from the live
-  capabilities rather than guessed — since a WMS layer can offer multiple
-  rendering styles (e.g. a plain point/dot symbol vs. a direction-and-
-  magnitude arrow style) and this project's sandbox can't tell in advance
-  which ones exist or which looks best, so the picker lets a sailor try
-  them directly.
-- **Fixed: the current overlay showing only plain dots, even after
-  switching styles**. A tidal current field is inherently time-varying —
-  it reverses with the tide — so a WMS layer for it almost always
-  declares a "time" `<Dimension>` in its capabilities; the GetMap
-  requests `js/bshWmsLayer.js` sent never included it. Omitting a
-  dimension a server declares isn't reliably an error — a server can
-  silently fall back to some default/empty rendering instead (e.g. a bare
-  station-location marker with no vector drawn), which would look exactly
-  like "just dots, the values are missing" regardless of which `Style` is
-  picked, since the picker only changes `STYLES=`, not the missing
-  dimension. `bshWmsLayer.js` now parses every `<Dimension>` a layer
-  declares and sends each one in the GetMap request: standard `time`/
-  `elevation` dimensions as bare `TIME=`/`ELEVATION=` params, any other
-  custom dimension prefixed `DIM_` per the WMS 1.3.0 spec — snapping a
-  `time` dimension declared as a discrete list to the closest advertised
-  entry, or handing an interval-declared one straight through as an ISO
-  instant (servers snap those to the nearest valid step themselves). The
-  desired time is kept in sync with the voyage timeline scrubber
-  (`js/voyage.js`, mirroring the existing particle-field time sync from
-  `setFieldTime`) — live "now" when no route is being scrubbed — so the
-  current field shown actually reflects the tide state at the displayed
-  moment instead of whatever the server defaults to. Verified with a
-  mocked capabilities document declaring an hourly-resolution time
-  interval: the initial GetMap request carries a `TIME=` param, switching
-  style keeps it, and scrubbing the voyage timeline changes it to a
-  different value. Still can't be verified against the real `bsh.de`
-  service from this sandbox, so whether its actual current layer offers
-  a genuine direction/magnitude style — as opposed to only ever having
-  point-symbol styles — remains unconfirmed.
-- **Second current-overlay provider: Rijkswaterstaat/RWsOS (Netherlands),
-  still experimental/unverified**. Even with the TIME-dimension fix above,
-  BSH's own current layer still appears to only offer a plain dot/point
-  style (unconfirmed, since this sandbox can't reach BSH either — but
-  no combination of style switching changed that in the field). Asked to
-  look for the source wasserkarte.net's Strömungsatlas actually uses:
-  it's very likely Rijkswaterstaat's operational North Sea current model
-  (DCSM7/Harmonie, refreshed daily with hourly maps up to 48h out,
-  reportedly covering the German Bight too, not just Dutch waters), built
-  on Deltares' Delft-FEWS software — which has a documented, standard
-  WMS-T (WMS with a time dimension) service, typically served under a
-  `/FewsWebServices/wms` path. `js/bshWmsLayer.js`'s candidate list now
-  tries this (`rwsos-dataservices-prod.avi.deltares.nl/FewsWebServices/wms`,
-  plus a `noos.matroos.rws.nl/direct/wms` variant) after the three BSH
-  candidates, still using whichever one's capabilities response actually
-  parses first. Layer-name matching now also recognizes Dutch terms
-  (`stroming`/`snelheid`/`getij`, not just German/English ones), and the
-  map's attribution now names whichever provider actually answered
-  instead of always crediting BSH. The exact Dutch host/path couldn't be
-  confirmed — this project's dev sandbox can't reach any `*.rws.nl`/
-  `*.deltares.nl` host either — so, same as the BSH candidates originally,
-  this is an educated guess based on documented Delft-FEWS URL
-  conventions, not a verified endpoint.
+- **BSH current map overlay — abandoned in favor of real GRIB data (see
+  below)**. `js/bshWmsLayer.js` originally added BSH's current data as a
+  WMS map tile layer, then fixed a missing `TIME=` dimension in its
+  GetMap requests (a common cause of a WMS silently falling back to a
+  bare point/dot rendering), then briefly tried a Rijkswaterstaat WMS as
+  a second candidate source. None of that ever produced a real direction/
+  magnitude rendering — turns out BSH's actual official current product
+  isn't served via this WMS as proper vectors at all (see below), so the
+  whole WMS-tile approach was dropped rather than keep guessing at style
+  names or second WMS providers.
+- **Real BSH current data via GRIB2, replacing the WMS overlay entirely
+  — experimental, unverified end-to-end**. BSH's own documentation
+  (shared directly, not independently discoverable from this sandbox)
+  describes its actual current-forecast product as GRIB1/GRIB2 files —
+  separate U/V (east/north) vector-component fields on a regional grid,
+  15-minute resolution, refreshed twice daily — served from
+  `filebox.bsh.de`/`ftp.bsh.de`, not the WMS. `js/gribParser.js` is a
+  minimal, purpose-built GRIB2 reader (regular lat/lon grids, simple-
+  packed data only — the two simplest, most common GRIB2 encodings;
+  anything else, e.g. JPEG2000 packing, throws a specific "unsupported"
+  error rather than risk silently misreading the bytes into wrong current
+  values). `js/bshGribCurrent.js` fetches BSH's `fixname` shortcut URL
+  (a constant filename BSH maintains specifically for automated
+  background updates, so no date/hour has to be computed client-side),
+  covering the Deutsche Bucht (0.5nm grid — the region `js/tidal.js`'s
+  heuristic already targets), and bilinearly samples the decoded U/V
+  grids at a given lat/lon/time.
+  `js/metocean.js#fetchMetoceanData` now prefers this real vector data
+  over both Open-Meteo's coarse global current model *and* the
+  magnitude-only tidal-amplification heuristic whenever it's cached and
+  covers the query — a genuine capability upgrade, not just a nicer
+  picture: unlike the old WMS layer (purely visual, explicitly never fed
+  into routing), this flows straight into `fetchMetoceanData`, so it
+  actually improves route calculations too, and into the existing
+  animated particle overlay (no separate "map layer" needed — real
+  vectors just make the existing wind/current animation more accurate).
+  Follows the same synchronous-peek/background-warm pattern
+  `js/bshTides.js` already established for the water-level API, so a
+  slow or unreachable GRIB fetch can never add latency to the routing
+  solver's hot path. The Wetter tab's "BSH Strömung (GRIB, real)" button
+  triggers an explicit load and reports the real outcome (timesteps
+  loaded, or the exact error) instead of a silent background attempt
+  only.
+  **Verification**: `js/gribParser.js` is checked against a hand-built
+  synthetic GRIB2 fixture with known bytes and a hand-computed expected
+  grid (covering the grid-definition, product-definition, and simple-
+  packing sections, the GRIB sign-bit integer convention for both 2- and
+  4-byte fields including negative longitudes, and the zero-bit
+  degenerate packing case) — the closest available substitute for a real
+  file, since this sandbox can't reach `filebox.bsh.de` to fetch one.
+  Two things remain genuinely unverified: whether `filebox.bsh.de` allows
+  cross-origin browser fetches (CORS) at all — if not, every load fails
+  cleanly and the app falls back to Open-Meteo + the heuristic, same as
+  if BSH were simply unreachable — and whether BSH's real files actually
+  use simple packing (if they use JPEG2000 or complex packing instead,
+  `gribParser.js` reports that specific unsupported-template error rather
+  than guessing).
 - **Saved routes (browser localStorage)**: the Wegpunkte tab's
   "Gespeicherte Routen" section lets a sailor save the current waypoints,
   hazard zones, and solver settings (fan width, refinement passes, wave

@@ -424,27 +424,17 @@
       <div class="bg-marine-900/80 p-3 rounded-xl border border-slate-800 space-y-2">
         <div class="flex items-center justify-between text-xs">
           <span class="font-bold text-white flex items-center gap-1.5">
-            <i data-lucide="map" class="w-4 h-4 text-emerald-400"></i>
-            Strömungsatlas (Karte)
+            <i data-lucide="waves" class="w-4 h-4 text-emerald-400"></i>
+            BSH Strömung (GRIB, real)
           </span>
-          <button id="btnToggleBshWmsLayer" aria-pressed="false" class="text-[10px] px-2 py-1 rounded-lg border border-slate-700 text-slate-400 bg-marine-900/60 font-semibold active:scale-95 transition-transform">
-            Aus
+          <button id="btnLoadBshGribCurrent" class="text-[10px] px-2 py-1 rounded-lg border border-slate-700 text-slate-400 bg-marine-900/60 font-semibold active:scale-95 transition-transform">
+            Jetzt laden
           </button>
         </div>
         <p class="text-[11px] text-slate-400 leading-relaxed">
-          Blendet eine amtliche Strömungs-Kartenebene (öffentlicher WMS-Dienst) direkt über der Seekarte ein — echte Modelldaten, nicht die Näherung unten. Versucht der Reihe nach BSH (Deutschland) und Rijkswaterstaat/RWsOS (Niederlande, deckt laut Quelle auch die Deutsche Bucht ab) und nimmt den ersten erreichbaren Dienst. Rein visuell; fließt nicht in die Routenberechnung ein. Experimentell: die genauen Dienst-Endpunkte konnten nicht aus der Entwicklungsumgebung heraus verifiziert werden.
+          Lädt BSH's offizielle Strömungsvorhersage (GRIB2, echte U/V-Vektoren, 0,5 sm Raster, Deutsche Bucht) direkt vom öffentlichen Server. Ersetzt — wo verfügbar — sowohl die Wind/Strom-Animation als auch die Strömungsdaten in der Routenberechnung durch echte amtliche Werte, statt der groben Näherung unten. Wird zusätzlich automatisch im Hintergrund geladen, sobald die Routenberechnung sie zum ersten Mal braucht. Experimentell: ob filebox.bsh.de browserseitige Anfragen (CORS) zulässt, konnte aus der Entwicklungsumgebung heraus nicht verifiziert werden.
         </p>
-        <div id="bshWmsPickerRow" class="hidden grid grid-cols-2 gap-1.5">
-          <div>
-            <label class="text-[9px] text-slate-500" for="bshWmsLayerSelect">Ebene</label>
-            <select id="bshWmsLayerSelect" class="w-full text-[10px] bg-marine-900 text-sky-300 border border-slate-700 rounded-lg px-1.5 py-1 focus:outline-none focus:border-sky-400 cursor-pointer"></select>
-          </div>
-          <div>
-            <label class="text-[9px] text-slate-500" for="bshWmsStyleSelect">Darstellung</label>
-            <select id="bshWmsStyleSelect" class="w-full text-[10px] bg-marine-900 text-sky-300 border border-slate-700 rounded-lg px-1.5 py-1 focus:outline-none focus:border-sky-400 cursor-pointer"></select>
-          </div>
-        </div>
-        <div id="bshWmsStatus" class="text-[10px] text-slate-500"></div>
+        <div id="bshGribStatus" class="text-[10px] text-slate-500"></div>
       </div>
 
       <div class="bg-marine-900/80 p-3 rounded-xl border border-slate-800 space-y-1.5">
