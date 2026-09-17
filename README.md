@@ -36,6 +36,7 @@ js/
   tidal.js                       German Bight/Wadden Sea tidal-current modeling
   bshTides.js                    Real BSH water-level forecast API client
   bshWmsLayer.js                 BSH current WMS map overlay (experimental, unverified)
+  savedRoutes.js                 Save/load voyage plans in browser localStorage
   particleField.js                 Animated wind/current particle overlay
   departureWindow.js                Compares routes across a ±X hour window
   main.js                            Entry point: map init + event wiring
@@ -267,7 +268,22 @@ After that first setup, every merge to `main` redeploys automatically.
   toggle shows the exact per-candidate error (URL + status/reason) in the
   UI, not just the console — so a further failure can be diagnosed
   precisely instead of guessed at again. Purely visual either way — never
-  feeds into the routing calculation.
+  feeds into the routing calculation. Once visible, an "Ebene"/"Darstellung"
+  (layer/style) picker appears — also discovered from the live
+  capabilities rather than guessed — since a WMS layer can offer multiple
+  rendering styles (e.g. a plain point/dot symbol vs. a direction-and-
+  magnitude arrow style) and this project's sandbox can't tell in advance
+  which ones exist or which looks best, so the picker lets a sailor try
+  them directly.
+- **Saved routes (browser localStorage)**: the Wegpunkte tab's
+  "Gespeicherte Routen" section lets a sailor save the current waypoints,
+  hazard zones, and solver settings (fan width, refinement passes, wave
+  sensitivity, etc.) under a name, and reload any saved plan later —
+  entirely in the browser's own `localStorage`, no account or backend.
+  Deliberately does not save the departure time or a computed route
+  result, since both would just be stale by the time the plan is reused;
+  loading a saved plan restores the waypoints/zones/settings the same way
+  a preset does, and the sailor re-runs "Route berechnen" themselves.
 - **Datenquellen panel** (Wetter tab, "Datenquellen & Abdeckung"): shows
   exactly which model backs each of wind/wave/current, its resolution, the
   actual forecast time window from the most recently fetched data, and

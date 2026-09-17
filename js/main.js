@@ -13,7 +13,9 @@ import { triggerIsochroneRouteOptimization } from './optimizer.js';
 import { initParticleField, setLayerVisible, isLayerVisible, setColorFieldVisible, setColorFieldParam, colorScaleCss } from './particleField.js';
 import { findBestDepartureTime, toggleDepartureVariantsOnMap } from './departureWindow.js';
 import { updateTidalPhaseBadge, renderDataSourcesPanel } from './results.js';
-import { showBshWmsLayer, hideBshWmsLayer, isBshWmsLayerVisible } from './bshWmsLayer.js';
+import { showBshWmsLayer, hideBshWmsLayer, isBshWmsLayerVisible, setBshWmsSelection } from './bshWmsLayer.js';
+import { readOptimizerConfig } from './optimizer.js';
+import { saveCurrentRoute, renderSavedRoutesList } from './savedRoutes.js';
 
 function initMap() {
   state.map = L.map('map', {
@@ -172,8 +174,57 @@ function wireControls() {
 
   const bshWmsBtn = document.getElementById('btnToggleBshWmsLayer');
   const bshWmsStatus = document.getElementById('bshWmsStatus');
+  const bshWmsPickerRow = document.getElementById('bshWmsPickerRow');
+  const bshWmsLayerSelect = document.getElementById('bshWmsLayerSelect');
+  const bshWmsStyleSelect = document.getElementById('bshWmsStyleSelect');
   const BSH_WMS_OFF_CLASS = 'text-[10px] px-2 py-1 rounded-lg border border-slate-700 text-slate-400 bg-marine-900/60 font-semibold active:scale-95 transition-transform';
   const BSH_WMS_ON_CLASS = 'text-[10px] px-2 py-1 rounded-lg border border-emerald-400/50 text-emerald-300 bg-emerald-500/10 font-semibold active:scale-95 transition-transform';
+
+  function populateBshWmsStyleOptions(allLayers, layerName, styleName) {
+    const layer = allLayers.find(l => l.name === layerName);
+    bshWmsStyleSelect.innerHTML = '';
+    if (!layer || layer.styles.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'Standard';
+      bshWmsStyleSelect.appendChild(opt);
+      return;
+    }
+    layer.styles.forEach((s) => {
+      const opt = document.createElement('option');
+      opt.value = s.name;
+      opt.textContent = s.title;
+      bshWmsStyleSelect.appendChild(opt);
+    });
+    bshWmsStyleSelect.value = styleName || layer.styles[0].name;
+  }
+
+  let bshWmsAllLayers = [];
+
+  function populateBshWmsPickers(result) {
+    bshWmsAllLayers = result.allLayers;
+    bshWmsLayerSelect.innerHTML = '';
+    bshWmsAllLayers.forEach((l) => {
+      const opt = document.createElement('option');
+      opt.value = l.name;
+      opt.textContent = l.title;
+      bshWmsLayerSelect.appendChild(opt);
+    });
+    bshWmsLayerSelect.value = result.currentLayerName;
+    populateBshWmsStyleOptions(bshWmsAllLayers, result.currentLayerName, result.currentStyleName);
+    bshWmsPickerRow.classList.remove('hidden');
+  }
+
+  bshWmsLayerSelect.addEventListener('change', async () => {
+    populateBshWmsStyleOptions(bshWmsAllLayers, bshWmsLayerSelect.value, null);
+    const result = await setBshWmsSelection(bshWmsLayerSelect.value, bshWmsStyleSelect.value);
+    if (result) bshWmsStatus.textContent = `Ebene: ${result.title}`;
+  });
+  bshWmsStyleSelect.addEventListener('change', async () => {
+    const result = await setBshWmsSelection(bshWmsLayerSelect.value, bshWmsStyleSelect.value);
+    if (result) bshWmsStatus.textContent = `Ebene: ${result.title}`;
+  });
+
   bshWmsBtn.addEventListener('click', async () => {
     if (isBshWmsLayerVisible()) {
       hideBshWmsLayer();
@@ -181,6 +232,7 @@ function wireControls() {
       bshWmsBtn.setAttribute('aria-pressed', 'false');
       bshWmsBtn.className = BSH_WMS_OFF_CLASS;
       bshWmsStatus.textContent = '';
+      bshWmsPickerRow.classList.add('hidden');
       return;
     }
     bshWmsBtn.textContent = 'Lädt…';
@@ -192,6 +244,7 @@ function wireControls() {
       bshWmsBtn.setAttribute('aria-pressed', 'true');
       bshWmsBtn.className = BSH_WMS_ON_CLASS;
       bshWmsStatus.textContent = result.layerTitle ? `Ebene: ${result.layerTitle}` : '';
+      populateBshWmsPickers(result);
       showToast('BSH Strömungs-Ebene: Sichtbar', 'emerald');
     } else {
       bshWmsBtn.textContent = 'Aus';
@@ -234,6 +287,47 @@ function wireControls() {
   });
 
   document.getElementById('btnClearWps').addEventListener('click', clearAllWaypoints);
+
+  const savedRoutesBody = document.getElementById('savedRoutesBody');
+  const savedRoutesToggle = document.getElementById('btnToggleSavedRoutes');
+  savedRoutesToggle.addEventListener('click', () => {
+    const isHidden = savedRoutesBody.classList.toggle('hidden');
+    savedRoutesToggle.setAttribute('aria-expanded', String(!isHidden));
+    document.getElementById('savedRoutesChevron').setAttribute('data-lucide', isHidden ? 'chevron-down' : 'chevron-up');
+    window.lucide?.createIcons();
+    if (!isHidden) renderSavedRoutesList(applySavedRouteConfig);
+  });
+
+  // Restores the solver settings captured with a saved route — sets each
+  // slider/select's value and dispatches 'input' so the existing label
+  // listeners (stepTimeLabel etc.) stay in sync, same as the Playwright
+  // test harness does when driving these controls programmatically.
+  function applySavedRouteConfig(config) {
+    if (!config) return;
+    const setSlider = (id, value) => {
+      const el = document.getElementById(id);
+      if (!el || value === undefined) return;
+      el.value = value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    setSlider('stepTimeSlider', config.dtMinutes);
+    setSlider('fanWidthSlider', config.fanWidthDeg);
+    setSlider('raysPerNodeSlider', config.numRaysPerNode);
+    setSlider('sectorBinsSlider', config.numSectors);
+    setSlider('refinementPassesSlider', config.refinementPasses);
+    setSlider('waveSensitivitySlider', config.waveSensitivity);
+    const strategyEl = document.getElementById('routingStrategy');
+    if (strategyEl && config.strategy) strategyEl.value = config.strategy;
+  }
+
+  document.getElementById('btnSaveCurrentRoute').addEventListener('click', () => {
+    const nameInput = document.getElementById('saveRouteNameInput');
+    const ok = saveCurrentRoute(nameInput.value, readOptimizerConfig());
+    if (ok) {
+      nameInput.value = '';
+      renderSavedRoutesList(applySavedRouteConfig);
+    }
+  });
 
   document.getElementById('btnStartDrawZone').addEventListener('click', () => {
     state.isDrawingZoneMode = true;
