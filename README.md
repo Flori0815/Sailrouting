@@ -207,6 +207,41 @@ After that first setup, every merge to `main` redeploys automatically.
   a physical boat characteristic, not a preference) and not applied to the
   final "connect to the exact waypoint" segment, whose position is pinned
   to the target regardless of heading.
+- **Fixed: routes bowing far off course then snapping straight back**.
+  Reported as "the router just drifts away following highest speed and
+  then needs to come back to the next waypoint." Root cause, found by
+  fuzzing: the wavefront's sector-binning filters each step's candidates
+  by angle from the leg's *original* start-to-goal bearing; when
+  favorable wind/current legitimately pulled the search well off that
+  line for a while (correct isochrone behavior — sometimes a longer path
+  is faster) or a step produced zero raw candidates at all, every
+  candidate could fall outside that tolerance window at once, emptying
+  the frontier. The search then silently kept the stale, far-from-goal
+  frontier and the final "connect to the exact waypoint" logic bridged
+  the real (possibly huge) remaining gap with one straight-line segment
+  that ignores wind, current, tacking, and hazards entirely — the "large
+  bow" users saw (confirmed via fuzzing: a 35nm leg produced a
+  21nm/15.9h straight final segment, 61% of the leg bridged as a
+  straight line). Fixed two ways: (1) when a step's frontier would go
+  empty, fall back to the single closest-to-goal candidate from that
+  step's full, unfiltered set instead of stalling, so the search keeps
+  stepping through real physics all the way to the goal; (2) the final
+  connector now rejects (returns no route rather than faking one) if
+  closing it would take longer than ~6 step-durations — a *time*-based
+  cap, not distance-based, since a slow/near-no-go final bearing can turn
+  even a modest distance into an implausible time gap that a
+  distance-only check missed (14/300 fuzz trials still slipped a bogus
+  bow through with a distance-only cap; 0/300 with the time-based one).
+  Also scaled the forward-progression tolerance by each step's own
+  distance rather than a fixed 0.15nm, so legitimate close-hauled tacking
+  geometry near the goal isn't penalized more at a larger time step for
+  no physical reason. Verified with 300-trial fuzzing (0 bogus bows,
+  0 thrown exceptions, 0 regressions in the previously-fixed empty-frontier
+  and degenerate-straight-line bugs) and a real-browser Playwright check.
+  An honest "no route found" now happens in ~3% of realistic-conditions
+  trials at default settings (up from ~0% before, since some of the
+  routes this fix rejects were the silent bogus bows) — preferred over
+  silently returning a wrong route.
 
 ## Data sources, tidal currents, and animation controls
 

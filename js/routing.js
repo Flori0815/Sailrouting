@@ -173,8 +173,17 @@ export async function solveIsochronePassage(fromCoord, toCoord, startTime, confi
         const nextCoord = projectPosition(node.lat, node.lon, cog, stepDistNm);
         const nextDistToGoal = calculateDistanceNm(nextCoord[0], nextCoord[1], toCoord[0], toCoord[1]);
 
-        // Strict forward progression: reject candidates that fall backwards away from the goal
-        if (nextDistToGoal > currentDistToGoal + 0.15) continue;
+        // Strict forward progression: reject candidates that fall backwards
+        // away from the goal. The allowed slack scales with this step's own
+        // distance (a fixed 0.15nm was comparatively far tighter for a
+        // large/fast step than a small/slow one) — without this, a larger
+        // time step made legitimate close-hauled tacking geometry near the
+        // goal (a tack that transiently increases straight-line distance
+        // while still making real upwind progress, completely normal) fail
+        // more often than the same geometry at a finer step, for no
+        // physical reason, just tolerance-vs-stepsize mismatch.
+        const progressionSlackNm = Math.max(0.15, 0.05 * stepDistNm);
+        if (nextDistToGoal > currentDistToGoal + progressionSlackNm) continue;
 
         // Spatial grid dominance: reject already-visited coordinates
         const cellKey = getCellKey(nextCoord[0], nextCoord[1]);
@@ -238,15 +247,36 @@ export async function solveIsochronePassage(fromCoord, toCoord, startTime, confi
       }
     }
 
-    const newFrontier = Array.from(bins.values()).map(item => item.candidate);
+    let newFrontier = Array.from(bins.values()).map(item => item.candidate);
     if (newFrontier.length === 0) {
       // Every candidate this step fell outside the sector-binning tolerance
-      // window around the leg's original bearing (most likely with a
-      // narrowed, reference-biased refinement-pass fan that has drifted
-      // away from it) — stop advancing and keep the previous frontier for
-      // the fallback below instead of continuing with an empty one, which
-      // would crash trying to read .distToGoal off nothing.
-      break;
+      // window around the leg's original bearing — most often because
+      // favorable wind/current genuinely pulled the search well off the
+      // rhumb line for a while (correct isochrone behavior: sometimes a
+      // longer path is faster), and the frontier's live position has
+      // drifted far enough that its bearing-from-*start* now falls outside
+      // a cone measured from the *original* bearing, even though the
+      // search itself is still converging fine locally.
+      //
+      // This used to just stop advancing and keep the stale previous
+      // frontier, which the post-loop fallback then accepted as "arrived"
+      // — silently bridging the real (possibly huge) remaining gap with a
+      // single straight-line "final connector" segment that ignores wind,
+      // current, and hazards entirely. That produced exactly the "sails
+      // way off, then snaps back in one bow" routes users were seeing:
+      // confirmed via fuzzing — a 35nm leg with favorable-but-indirect
+      // wind produced a 21nm/16h straight final segment this way (61% of
+      // the leg length bridged as a straight line).
+      //
+      // Instead, keep going: fall back to the single best (closest to
+      // goal) candidate from this step's full, unfiltered candidate set,
+      // regardless of the original-bearing cone. This sacrifices some
+      // wavefront breadth for one step (rebuilt again next step from
+      // this new position) but keeps the search honestly stepping through
+      // real wind/current/hazard checks all the way to the goal instead of
+      // silently faking the rest of the route.
+      const bestOverall = currentCandidates.reduce((min, c) => c.distToGoal < min.distToGoal ? c : min, currentCandidates[0]);
+      newFrontier = [bestOverall];
     }
     frontier = newFrontier;
 
@@ -317,6 +347,7 @@ export async function solveIsochronePassage(fromCoord, toCoord, startTime, confi
 
   const last = pathNodes[pathNodes.length - 1];
   const remainingDist = calculateDistanceNm(last.lat, last.lon, toCoord[0], toCoord[1]);
+
   if (remainingDist > 0.05) {
     // This final segment closes the gap left by the isochrone step size with
     // a straight line to the exact waypoint, which can point at any bearing
@@ -336,6 +367,24 @@ export async function solveIsochronePassage(fromCoord, toCoord, startTime, confi
     const vy = finalStw * Math.cos(hRad) + last.curSpeed * Math.cos(cRad);
     const finalSog = Math.max(0.3, Math.hypot(vx, vy));
     const finalHrs = remainingDist / finalSog;
+
+    // The final connector exists only to close a small residual gap left by
+    // the isochrone step size — normally a fraction of one step's duration.
+    // A gap that takes many step-widths to close means the step-by-step
+    // search didn't actually reach the goal and fell through to the
+    // "closest frontier node" fallback above instead (e.g. every candidate
+    // briefly fell outside the sector-binning cone, or a step produced zero
+    // valid candidates while the boat was still far off — both confirmed
+    // via fuzzing). A pure distance cap alone doesn't catch this: a slow,
+    // near-no-go final bearing can turn even a modest distance into a huge
+    // time gap, which is what actually matters here — silently bridging
+    // either with one straight line ignores wind, current, tacking, and
+    // hazards for the rest of the leg, which is exactly what produced
+    // routes that sail well off course then snap straight back in one bow.
+    // Treat an implausibly long connector as a failed pass instead of
+    // faking it.
+    const maxPlausibleConnectorHrs = Math.max(1, 6 * dtHours);
+    if (finalHrs > maxPlausibleConnectorHrs) return null;
 
     pathNodes.push({
       id: nodeIdCounter++,
