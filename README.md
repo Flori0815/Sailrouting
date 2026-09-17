@@ -339,6 +339,29 @@ After that first setup, every merge to `main` redeploys automatically.
   service from this sandbox, so whether its actual current layer offers
   a genuine direction/magnitude style — as opposed to only ever having
   point-symbol styles — remains unconfirmed.
+- **Second current-overlay provider: Rijkswaterstaat/RWsOS (Netherlands),
+  still experimental/unverified**. Even with the TIME-dimension fix above,
+  BSH's own current layer still appears to only offer a plain dot/point
+  style (unconfirmed, since this sandbox can't reach BSH either — but
+  no combination of style switching changed that in the field). Asked to
+  look for the source wasserkarte.net's Strömungsatlas actually uses:
+  it's very likely Rijkswaterstaat's operational North Sea current model
+  (DCSM7/Harmonie, refreshed daily with hourly maps up to 48h out,
+  reportedly covering the German Bight too, not just Dutch waters), built
+  on Deltares' Delft-FEWS software — which has a documented, standard
+  WMS-T (WMS with a time dimension) service, typically served under a
+  `/FewsWebServices/wms` path. `js/bshWmsLayer.js`'s candidate list now
+  tries this (`rwsos-dataservices-prod.avi.deltares.nl/FewsWebServices/wms`,
+  plus a `noos.matroos.rws.nl/direct/wms` variant) after the three BSH
+  candidates, still using whichever one's capabilities response actually
+  parses first. Layer-name matching now also recognizes Dutch terms
+  (`stroming`/`snelheid`/`getij`, not just German/English ones), and the
+  map's attribution now names whichever provider actually answered
+  instead of always crediting BSH. The exact Dutch host/path couldn't be
+  confirmed — this project's dev sandbox can't reach any `*.rws.nl`/
+  `*.deltares.nl` host either — so, same as the BSH candidates originally,
+  this is an educated guess based on documented Delft-FEWS URL
+  conventions, not a verified endpoint.
 - **Saved routes (browser localStorage)**: the Wegpunkte tab's
   "Gespeicherte Routen" section lets a sailor save the current waypoints,
   hazard zones, and solver settings (fan width, refinement passes, wave
