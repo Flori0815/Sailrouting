@@ -35,7 +35,6 @@ js/
   waves.js                       Directional wave-height speed-penalty model
   tidal.js                       German Bight/Wadden Sea tidal-current modeling
   bshTides.js                    Real BSH water-level forecast API client
-  bshWmsLayer.js                 Real BSH tidal-current WMS map overlay
   particleField.js                 Animated wind/current particle overlay
   departureWindow.js                Compares routes across a ±X hour window
   main.js                            Entry point: map init + event wiring
@@ -249,18 +248,19 @@ After that first setup, every merge to `main` redeploys automatically.
   amplification (default 1.6×). The same data drives a
   "Flut/Ebbe/Stillstand · Springtide/Nipptide (BSH `<station>`)" badge in
   the weather HUD.
-- **Tidal currents — real BSH map overlay**: the Wetter tab's "BSH
-  Gezeitenstrom" toggle adds BSH's official tidal-current WMS
-  (`geoseaportal.de/wss/service/Gezeitenstrom_Daten`) as a real map layer —
-  a standard, public OGC Web Map Service meant for exactly this kind of
-  third-party consumption, not a scraped or reverse-engineered format.
-  `js/bshWmsLayer.js` discovers the actual layer name at runtime from the
-  service's own GetCapabilities response instead of hardcoding a guess,
-  since this project's dev sandbox can't reach `geoseaportal.de` either to
-  confirm the exact layer/dimension names in advance; if the service is
-  unreachable or its response doesn't parse as expected, the toggle just
-  reports that and leaves everything else working. This layer is purely
-  visual — it does not feed into the routing calculation.
+- **Only two data providers**: Open-Meteo (wind, wave, and the baseline
+  ocean current) and BSH (real German-coast tidal timing). An earlier
+  version of this feature also added BSH's tidal-current WMS
+  (`geoseaportal.de/wss/service/Gezeitenstrom_Daten`) as a map overlay,
+  with the layer name discovered at runtime from the service's own
+  GetCapabilities response since this project's dev sandbox can't reach
+  `geoseaportal.de` to confirm the exact request format in advance — that
+  runtime discovery didn't produce a working tile request in practice
+  (404s), and rather than keep guessing at WMS parameters blind, it was
+  removed. The two-provider setup above is deliberately simpler and each
+  source is either directly confirmed working (Open-Meteo, used since the
+  first version of this app) or verified against a real client's source
+  (BSH water-level API, see above).
 - **Datenquellen panel** (Wetter tab, "Datenquellen & Abdeckung"): shows
   exactly which model backs each of wind/wave/current, its resolution, the
   actual forecast time window from the most recently fetched data, and
@@ -269,8 +269,8 @@ After that first setup, every merge to `main` redeploys automatically.
   glance what data is live for what times, rather than trusting it
   silently.
 - **Wetter tab**: animation layer toggles, the colour field + legend, the
-  data-sources panel, the BSH map overlay toggle, and the tidal
-  amplification controls all live together in a dedicated sidebar tab
+  data-sources panel, and the tidal amplification controls all live
+  together in a dedicated sidebar tab
   (matching the app's other tabs) instead of being split across a floating
   HUD corner panel and the Isochronen tab. The floating weather HUD
   (top-left) is now a pure live-readout display, with a link into the
