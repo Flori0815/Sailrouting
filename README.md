@@ -35,6 +35,7 @@ js/
   waves.js                       Directional wave-height speed-penalty model
   tidal.js                       German Bight/Wadden Sea tidal-current modeling
   bshTides.js                    Real BSH water-level forecast API client
+  bshWmsLayer.js                 BSH current WMS map overlay (experimental, unverified)
   particleField.js                 Animated wind/current particle overlay
   departureWindow.js                Compares routes across a ±X hour window
   main.js                            Entry point: map init + event wiring
@@ -248,19 +249,25 @@ After that first setup, every merge to `main` redeploys automatically.
   amplification (default 1.6×). The same data drives a
   "Flut/Ebbe/Stillstand · Springtide/Nipptide (BSH `<station>`)" badge in
   the weather HUD.
-- **Only two data providers**: Open-Meteo (wind, wave, and the baseline
-  ocean current) and BSH (real German-coast tidal timing). An earlier
-  version of this feature also added BSH's tidal-current WMS
-  (`geoseaportal.de/wss/service/Gezeitenstrom_Daten`) as a map overlay,
-  with the layer name discovered at runtime from the service's own
-  GetCapabilities response since this project's dev sandbox can't reach
-  `geoseaportal.de` to confirm the exact request format in advance — that
-  runtime discovery didn't produce a working tile request in practice
-  (404s), and rather than keep guessing at WMS parameters blind, it was
-  removed. The two-provider setup above is deliberately simpler and each
-  source is either directly confirmed working (Open-Meteo, used since the
-  first version of this app) or verified against a real client's source
-  (BSH water-level API, see above).
+- **Two numeric data providers**: Open-Meteo (wind, wave, and the baseline
+  ocean current) and BSH (real German-coast tidal timing) — both directly
+  confirmed working, the second against a real client's source (see
+  above).
+- **BSH current map overlay — experimental, unverified**: the Wetter tab's
+  "BSH Strömung" toggle adds BSH's official current-model (BSHcmod,
+  covering tidal + wind + density-driven current, not just tides) as a
+  real WMS map layer — a standard public OGC service meant for exactly
+  this, not a scraped tile format. This project's dev sandbox can't reach
+  `bsh.de`/`gdi.bsh.de` at all, so `js/bshWmsLayer.js` can't be tested
+  end-to-end from here; a first attempt at a single hardcoded capabilities
+  URL 404'd in the field, so this now tries three different documented-
+  looking candidate URLs in order and uses whichever one's capabilities
+  response actually parses, discovering the real layer name from it at
+  runtime rather than guessing that too. If all three still fail, the
+  toggle shows the exact per-candidate error (URL + status/reason) in the
+  UI, not just the console — so a further failure can be diagnosed
+  precisely instead of guessed at again. Purely visual either way — never
+  feeds into the routing calculation.
 - **Datenquellen panel** (Wetter tab, "Datenquellen & Abdeckung"): shows
   exactly which model backs each of wind/wave/current, its resolution, the
   actual forecast time window from the most recently fetched data, and
