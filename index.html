@@ -263,6 +263,25 @@
         </button>
       </div>
 
+      <div class="bg-marine-800/80 rounded-xl border border-slate-700 text-xs">
+        <button id="btnToggleSavedRoutes" aria-expanded="false" class="w-full flex items-center justify-between px-2.5 py-2">
+          <span class="flex items-center gap-1.5 font-medium text-slate-300">
+            <i data-lucide="save" class="w-3.5 h-3.5 text-sky-400"></i> Gespeicherte Routen (im Browser)
+          </span>
+          <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-400" id="savedRoutesChevron"></i>
+        </button>
+        <div id="savedRoutesBody" class="hidden px-2.5 pb-2.5 space-y-2">
+          <div class="flex gap-1.5">
+            <label class="sr-only" for="saveRouteNameInput">Name der Route</label>
+            <input id="saveRouteNameInput" type="text" placeholder="Name (optional)" maxlength="60" class="flex-1 min-w-0 text-xs bg-marine-900 text-sky-300 border border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:border-sky-400">
+            <button id="btnSaveCurrentRoute" class="bg-slate-800 hover:bg-slate-700 text-emerald-400 font-semibold px-3 py-1.5 rounded-lg text-xs border border-emerald-500/30 flex items-center gap-1 active:scale-95 transition-transform whitespace-nowrap">
+              <i data-lucide="save" class="w-3.5 h-3.5"></i> Speichern
+            </button>
+          </div>
+          <div id="savedRoutesList" class="space-y-1.5 max-h-40 overflow-y-auto"></div>
+        </div>
+      </div>
+
       <div class="flex-1 overflow-y-auto space-y-1.5 pr-1" id="waypointList"></div>
 
       <div class="pt-2 border-t border-slate-800">
@@ -415,6 +434,16 @@
         <p class="text-[11px] text-slate-400 leading-relaxed">
           Blendet BSH's offizielle Strömungs-Kartenebene (öffentlicher WMS-Dienst, bsh.de/BSHcmod) direkt über der Seekarte ein — echte amtliche Daten, nicht die Näherung unten. Rein visuell; fließt nicht in die Routenberechnung ein. Experimentell: der genaue Dienst-Endpunkt konnte nicht aus der Entwicklungsumgebung heraus verifiziert werden.
         </p>
+        <div id="bshWmsPickerRow" class="hidden grid grid-cols-2 gap-1.5">
+          <div>
+            <label class="text-[9px] text-slate-500" for="bshWmsLayerSelect">Ebene</label>
+            <select id="bshWmsLayerSelect" class="w-full text-[10px] bg-marine-900 text-sky-300 border border-slate-700 rounded-lg px-1.5 py-1 focus:outline-none focus:border-sky-400 cursor-pointer"></select>
+          </div>
+          <div>
+            <label class="text-[9px] text-slate-500" for="bshWmsStyleSelect">Darstellung</label>
+            <select id="bshWmsStyleSelect" class="w-full text-[10px] bg-marine-900 text-sky-300 border border-slate-700 rounded-lg px-1.5 py-1 focus:outline-none focus:border-sky-400 cursor-pointer"></select>
+          </div>
+        </div>
         <div id="bshWmsStatus" class="text-[10px] text-slate-500"></div>
       </div>
 

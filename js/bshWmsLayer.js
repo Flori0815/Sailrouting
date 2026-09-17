@@ -60,10 +60,23 @@ function parseCapabilities(capabilitiesUrl, text) {
       default: d.getAttribute('default'),
       values: d.textContent.trim()
     }));
+    // A layer can offer multiple rendering styles (e.g. a plain dot/point
+    // symbol vs. a direction-and-magnitude arrow/vector style) — exposed
+    // so the UI can let a sailor pick one instead of being stuck with
+    // whatever the server defaults to (its first/only style).
+    const styles = Array.from(layerEl.querySelectorAll(':scope > Style')).map((s) => {
+      const sName = s.querySelector(':scope > Name');
+      const sTitle = s.querySelector(':scope > Title');
+      return {
+        name: sName ? sName.textContent.trim() : '',
+        title: sTitle ? sTitle.textContent.trim() : (sName ? sName.textContent.trim() : 'Standard')
+      };
+    }).filter(s => s.name);
     layers.push({
       name: nameEl.textContent.trim(),
       title: titleEl ? titleEl.textContent.trim() : nameEl.textContent.trim(),
-      dimensions
+      dimensions,
+      styles
     });
   });
   if (layers.length === 0) throw new Error('WMS capabilities listed no requestable layers');
@@ -112,28 +125,62 @@ export function isBshWmsLayerVisible() {
   return wmsLeafletLayer !== null;
 }
 
+// Which layer/style is currently (or was last) selected — lets the UI
+// build a "change layer/style" control after the first successful
+// discovery, defaulting to whatever was auto-picked.
+let currentLayerName = null;
+let currentStyleName = null;
+
+function addTileLayer(caps, layerName, styleName) {
+  const layer = caps.allLayers.find(l => l.name === layerName) || caps.layer;
+  const style = styleName ?? (layer.styles[0]?.name ?? '');
+  currentLayerName = layer.name;
+  currentStyleName = style;
+
+  if (wmsLeafletLayer) state.map.removeLayer(wmsLeafletLayer);
+  wmsLeafletLayer = L.tileLayer.wms(caps.getMapUrl, {
+    layers: layer.name,
+    styles: style,
+    format: 'image/png',
+    transparent: true,
+    version: '1.3.0',
+    opacity: 0.75,
+    attribution: '© BSH Strömungen (bsh.de)'
+  });
+  wmsLeafletLayer.addTo(state.map);
+  return layer;
+}
+
 // Adds the layer, discovering capabilities first if needed. Returns
-// {ok: true, layerTitle} on success or {ok: false, error} on failure —
-// never throws, so callers can drive a toast/UI state directly off the
-// result instead of needing their own try/catch.
+// {ok: true, layerTitle, allLayers, currentLayerName, currentStyleName}
+// on success (allLayers/styles let the caller build a picker) or
+// {ok: false, error} on failure — never throws, so callers can drive a
+// toast/UI state directly off the result instead of needing their own
+// try/catch.
 export async function showBshWmsLayer() {
-  if (wmsLeafletLayer) return { ok: true };
   try {
     const caps = await getWmsCapabilities();
-    wmsLeafletLayer = L.tileLayer.wms(caps.getMapUrl, {
-      layers: caps.layer.name,
-      format: 'image/png',
-      transparent: true,
-      version: '1.3.0',
-      opacity: 0.75,
-      attribution: '© BSH Strömungen (bsh.de)'
-    });
-    wmsLeafletLayer.addTo(state.map);
-    return { ok: true, layerTitle: caps.layer.title };
+    if (!wmsLeafletLayer) addTileLayer(caps, caps.layer.name, null);
+    return {
+      ok: true,
+      layerTitle: caps.layer.title,
+      allLayers: caps.allLayers,
+      currentLayerName,
+      currentStyleName
+    };
   } catch (err) {
     wmsLeafletLayer = null;
     return { ok: false, error: err.message || String(err) };
   }
+}
+
+// Switches the visible layer/style without re-fetching capabilities
+// (already cached from showBshWmsLayer). No-op if the WMS layer isn't
+// currently shown.
+export async function setBshWmsSelection(layerName, styleName) {
+  if (!wmsLeafletLayer) return null;
+  const caps = await getWmsCapabilities();
+  return addTileLayer(caps, layerName, styleName);
 }
 
 export function hideBshWmsLayer() {
