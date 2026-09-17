@@ -95,40 +95,6 @@
         </button>
       </div>
       <div id="hudBody" class="pt-2 text-xs">
-        <!-- Per-layer animation toggles -->
-        <div class="grid grid-cols-4 gap-1 pb-2 mb-2 border-b border-slate-800">
-          <button id="btnLayerWind" data-kind="wind" title="Wind-Animation ein/ausblenden" aria-pressed="false" class="anim-layer-btn flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[9px] font-medium text-slate-500 bg-marine-900/60 border border-slate-800 active:scale-95 transition-transform">
-            <i data-lucide="wind" class="w-3.5 h-3.5"></i> Wind
-          </button>
-          <button id="btnLayerCurrent" data-kind="current" title="Strömungs-Animation ein/ausblenden" aria-pressed="false" class="anim-layer-btn flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[9px] font-medium text-slate-500 bg-marine-900/60 border border-slate-800 active:scale-95 transition-transform">
-            <i data-lucide="waves" class="w-3.5 h-3.5"></i> Strom
-          </button>
-          <button id="btnLayerWave" data-kind="wave" title="Wellen-Animation ein/ausblenden" aria-pressed="false" class="anim-layer-btn flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[9px] font-medium text-slate-500 bg-marine-900/60 border border-slate-800 active:scale-95 transition-transform">
-            <i data-lucide="droplets" class="w-3.5 h-3.5"></i> Welle
-          </button>
-          <button id="btnLayerColorField" title="Farbfläche (wie bei Windy) ein/ausblenden" aria-pressed="false" class="flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[9px] font-medium text-slate-500 bg-marine-900/60 border border-slate-800 active:scale-95 transition-transform">
-            <i data-lucide="palette" class="w-3.5 h-3.5"></i> Fläche
-          </button>
-        </div>
-
-        <div id="colorFieldControls" class="hidden pb-2 mb-2 border-b border-slate-800 space-y-1.5">
-          <div class="flex items-center justify-between text-[10px]">
-            <span class="text-slate-400">Farbfläche zeigt:</span>
-            <label class="sr-only" for="colorFieldParamSelect">Farbfläche Parameter</label>
-            <select id="colorFieldParamSelect" class="bg-marine-900 text-sky-300 border border-slate-700 rounded-lg px-1.5 py-1 text-[10px] focus:outline-none focus:border-sky-400 cursor-pointer">
-              <option value="wind">Wind</option>
-              <option value="current">Strömung</option>
-              <option value="wave">Welle</option>
-            </select>
-          </div>
-          <div id="colorFieldGradientBar" class="h-2 rounded-full"></div>
-          <div class="flex justify-between text-[9px] text-slate-500">
-            <span>0</span>
-            <span id="colorFieldLegendLabel">Wind</span>
-            <span id="colorFieldLegendMax">35 kn</span>
-          </div>
-        </div>
-
         <div class="grid grid-cols-2 gap-2">
           <div class="bg-marine-900/80 p-1.5 rounded-lg border border-slate-800">
             <div class="text-[10px] text-slate-400">Wahrer Wind (TWS/D)</div>
@@ -173,11 +139,9 @@
           </div>
         </div>
 
-        <button id="btnToggleDataSources" aria-expanded="false" class="w-full mt-2 flex items-center justify-between text-[10px] text-slate-400 hover:text-slate-200 pt-2 border-t border-slate-800">
-          <span class="flex items-center gap-1"><i data-lucide="database" class="w-3 h-3"></i> Datenquellen &amp; Abdeckung</span>
-          <i data-lucide="chevron-down" class="w-3 h-3" id="dataSourcesChevron"></i>
+        <button id="btnOpenWeatherTab" class="w-full mt-2 flex items-center justify-center gap-1.5 text-[10px] text-sky-400 hover:text-sky-300 pt-2 border-t border-slate-800">
+          <i data-lucide="sliders-horizontal" class="w-3 h-3"></i> Animation, Farbfläche &amp; Gezeiten-Einstellungen
         </button>
-        <div id="dataSourcesPanel" class="hidden mt-1.5 space-y-1.5 text-[9.5px] text-slate-400 leading-relaxed"></div>
       </div>
     </div>
   </div>
@@ -220,6 +184,9 @@
       </button>
       <button id="tabBtnIsochrone" role="tab" aria-selected="false" class="flex-1 py-2.5 text-center text-slate-400 hover:text-slate-200 border-b-2 border-transparent transition-colors">
         Isochronen
+      </button>
+      <button id="tabBtnWeather" role="tab" aria-selected="false" class="flex-1 py-2.5 text-center text-slate-400 hover:text-slate-200 border-b-2 border-transparent transition-colors">
+        Wetter
       </button>
       <button id="tabBtnPolars" role="tab" aria-selected="false" class="flex-1 py-2.5 text-center text-slate-400 hover:text-slate-200 border-b-2 border-transparent transition-colors">
         Polare
@@ -393,16 +360,82 @@
         </p>
       </div>
 
+    </div>
+
+    <!-- Tab: Wetter — animation layers, colour field, data sources, tidal data (real BSH + heuristic fallback) -->
+    <div id="weatherTab" class="flex-1 hidden flex-col overflow-y-auto p-3 space-y-3">
+      <div class="bg-marine-900/80 p-3 rounded-xl border border-slate-800 space-y-2">
+        <span class="font-bold text-white flex items-center gap-1.5 text-xs">
+          <i data-lucide="layers" class="w-4 h-4 text-sky-400"></i>
+          Animierte Ebenen
+        </span>
+        <div class="grid grid-cols-4 gap-1.5">
+          <button id="btnLayerWind" data-kind="wind" title="Wind-Animation ein/ausblenden" aria-pressed="false" class="anim-layer-btn flex flex-col items-center gap-0.5 py-2 rounded-lg text-[10px] font-medium text-slate-500 bg-marine-900/60 border border-slate-800 active:scale-95 transition-transform">
+            <i data-lucide="wind" class="w-4 h-4"></i> Wind
+          </button>
+          <button id="btnLayerCurrent" data-kind="current" title="Strömungs-Animation ein/ausblenden" aria-pressed="false" class="anim-layer-btn flex flex-col items-center gap-0.5 py-2 rounded-lg text-[10px] font-medium text-slate-500 bg-marine-900/60 border border-slate-800 active:scale-95 transition-transform">
+            <i data-lucide="waves" class="w-4 h-4"></i> Strom
+          </button>
+          <button id="btnLayerWave" data-kind="wave" title="Wellen-Animation ein/ausblenden" aria-pressed="false" class="anim-layer-btn flex flex-col items-center gap-0.5 py-2 rounded-lg text-[10px] font-medium text-slate-500 bg-marine-900/60 border border-slate-800 active:scale-95 transition-transform">
+            <i data-lucide="droplets" class="w-4 h-4"></i> Welle
+          </button>
+          <button id="btnLayerColorField" title="Farbfläche (wie bei Windy) ein/ausblenden" aria-pressed="false" class="flex flex-col items-center gap-0.5 py-2 rounded-lg text-[10px] font-medium text-slate-500 bg-marine-900/60 border border-slate-800 active:scale-95 transition-transform">
+            <i data-lucide="palette" class="w-4 h-4"></i> Fläche
+          </button>
+        </div>
+        <div id="colorFieldControls" class="hidden pt-2 mt-1 border-t border-slate-800 space-y-1.5">
+          <div class="flex items-center justify-between text-[11px]">
+            <span class="text-slate-400">Farbfläche zeigt:</span>
+            <label class="sr-only" for="colorFieldParamSelect">Farbfläche Parameter</label>
+            <select id="colorFieldParamSelect" class="bg-marine-900 text-sky-300 border border-slate-700 rounded-lg px-1.5 py-1 text-[11px] focus:outline-none focus:border-sky-400 cursor-pointer">
+              <option value="wind">Wind</option>
+              <option value="current">Strömung</option>
+              <option value="wave">Welle</option>
+            </select>
+          </div>
+          <div id="colorFieldGradientBar" class="h-2 rounded-full"></div>
+          <div class="flex justify-between text-[10px] text-slate-500">
+            <span>0</span>
+            <span id="colorFieldLegendLabel">Wind</span>
+            <span id="colorFieldLegendMax">35 kn</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-marine-900/80 p-3 rounded-xl border border-slate-800 space-y-2">
+        <div class="flex items-center justify-between text-xs">
+          <span class="font-bold text-white flex items-center gap-1.5">
+            <i data-lucide="map" class="w-4 h-4 text-emerald-400"></i>
+            BSH Gezeitenstrom (Karte)
+          </span>
+          <button id="btnToggleBshWmsLayer" aria-pressed="false" class="text-[10px] px-2 py-1 rounded-lg border border-slate-700 text-slate-400 bg-marine-900/60 font-semibold active:scale-95 transition-transform">
+            Aus
+          </button>
+        </div>
+        <p class="text-[11px] text-slate-400 leading-relaxed">
+          Blendet BSH's offizielle Gezeitenstrom-Kartenebene (öffentlicher WMS-Dienst, geoseaportal.de) direkt über der Seekarte ein — echte amtliche Daten, nicht die Näherung unten. Rein visuell; fließt nicht in die Routenberechnung ein.
+        </p>
+        <div id="bshWmsStatus" class="text-[10px] text-slate-500"></div>
+      </div>
+
+      <div class="bg-marine-900/80 p-3 rounded-xl border border-slate-800 space-y-1.5">
+        <span class="font-bold text-white flex items-center gap-1.5 text-xs">
+          <i data-lucide="database" class="w-4 h-4 text-sky-400"></i>
+          Datenquellen &amp; Abdeckung
+        </span>
+        <div id="dataSourcesPanel" class="space-y-1.5 text-[10.5px] text-slate-400 leading-relaxed pt-1"></div>
+      </div>
+
       <div class="bg-marine-900/80 p-3 rounded-xl border border-slate-800 space-y-2">
         <div class="flex items-center justify-between text-xs">
           <span class="font-bold text-white flex items-center gap-1.5">
             <i data-lucide="moon" class="w-4 h-4 text-emerald-400"></i>
-            Gezeitenstrom-Näherung
+            Gezeitenstrom in der Routenberechnung
           </span>
           <input id="checkTidalHeuristicEnabled" type="checkbox" checked class="w-4 h-4 rounded text-emerald-500 focus:ring-0 cursor-pointer">
         </div>
         <p class="text-[11px] text-slate-400 leading-relaxed">
-          Ein echter BSH-Gezeitenstromatlas ist (noch) nicht eingebunden — bis dahin verstärkt diese Näherung die Strömungsgeschwindigkeit in der Deutschen Bucht/im Wattenmeer anhand einer Mond-Gezeiten-Rechnung (M2/Springtide), ohne die vom Wettermodell gemeldete Richtung zu verändern. Nur innerhalb der Deutschen Bucht aktiv.
+          Verstärkt die Strömungsgeschwindigkeit in der Deutschen Bucht/im Wattenmeer, ohne die vom Wettermodell gemeldete Richtung zu verändern — Timing nutzt BSH's echte Wasserstandsvorhersage wo verfügbar (siehe Gezeitenstrom-Anzeige oben in der Wetter-HUD), sonst eine Mond-Gezeiten-Näherung (M2/Springtide). Nur innerhalb der Deutschen Bucht aktiv.
         </p>
         <div>
           <div class="flex justify-between text-slate-300 mb-1">
@@ -413,12 +446,12 @@
         </div>
         <div>
           <div class="flex justify-between text-slate-300 mb-1">
-            <span id="tidalPhaseOffsetSliderLabel">Tidenphase-Versatz:</span>
+            <span id="tidalPhaseOffsetSliderLabel">Tidenphase-Versatz (Näherungs-Fallback):</span>
             <span class="font-mono text-emerald-400 font-bold" id="tidalPhaseOffsetLabel">+0.0 h</span>
           </div>
           <input id="tidalPhaseOffsetSlider" type="range" min="-6" max="6" value="0" step="0.5" aria-labelledby="tidalPhaseOffsetSliderLabel" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-400">
           <p class="text-[10px] text-slate-500 mt-1 leading-relaxed">
-            Mit einer echten Gezeitentafel für dein Revier abgleichen und hier nachjustieren, falls Flut/Ebbe-Anzeige nicht zur Hochwasserzeit passt.
+            Wirkt nur, wenn keine echten BSH-Daten verfügbar sind. Mit einer echten Gezeitentafel für dein Revier abgleichen und hier nachjustieren, falls Flut/Ebbe-Anzeige nicht zur Hochwasserzeit passt.
           </p>
         </div>
       </div>
