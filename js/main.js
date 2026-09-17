@@ -13,6 +13,7 @@ import { triggerIsochroneRouteOptimization } from './optimizer.js';
 import { initParticleField, setLayerVisible, isLayerVisible, setColorFieldVisible, setColorFieldParam, colorScaleCss } from './particleField.js';
 import { findBestDepartureTime, toggleDepartureVariantsOnMap } from './departureWindow.js';
 import { updateTidalPhaseBadge, renderDataSourcesPanel } from './results.js';
+import { showBshWmsLayer, hideBshWmsLayer, isBshWmsLayerVisible } from './bshWmsLayer.js';
 
 function initMap() {
   state.map = L.map('map', {
@@ -168,6 +169,40 @@ function wireControls() {
     refreshColorFieldUI();
   });
   refreshColorFieldUI();
+
+  const bshWmsBtn = document.getElementById('btnToggleBshWmsLayer');
+  const bshWmsStatus = document.getElementById('bshWmsStatus');
+  const BSH_WMS_OFF_CLASS = 'text-[10px] px-2 py-1 rounded-lg border border-slate-700 text-slate-400 bg-marine-900/60 font-semibold active:scale-95 transition-transform';
+  const BSH_WMS_ON_CLASS = 'text-[10px] px-2 py-1 rounded-lg border border-emerald-400/50 text-emerald-300 bg-emerald-500/10 font-semibold active:scale-95 transition-transform';
+  bshWmsBtn.addEventListener('click', async () => {
+    if (isBshWmsLayerVisible()) {
+      hideBshWmsLayer();
+      bshWmsBtn.textContent = 'Aus';
+      bshWmsBtn.setAttribute('aria-pressed', 'false');
+      bshWmsBtn.className = BSH_WMS_OFF_CLASS;
+      bshWmsStatus.textContent = '';
+      return;
+    }
+    bshWmsBtn.textContent = 'Lädt…';
+    bshWmsBtn.disabled = true;
+    const result = await showBshWmsLayer();
+    bshWmsBtn.disabled = false;
+    if (result.ok) {
+      bshWmsBtn.textContent = 'An';
+      bshWmsBtn.setAttribute('aria-pressed', 'true');
+      bshWmsBtn.className = BSH_WMS_ON_CLASS;
+      bshWmsStatus.textContent = result.layerTitle ? `Ebene: ${result.layerTitle}` : '';
+      showToast('BSH Strömungs-Ebene: Sichtbar', 'emerald');
+    } else {
+      bshWmsBtn.textContent = 'Aus';
+      bshWmsBtn.setAttribute('aria-pressed', 'false');
+      bshWmsBtn.className = BSH_WMS_OFF_CLASS;
+      // Surfaced directly in the UI (not just the console) so a failure
+      // here can be reported back precisely without needing devtools.
+      bshWmsStatus.textContent = `Derzeit nicht erreichbar: ${result.error || 'unbekannter Fehler'}`;
+      showToast('BSH Strömungs-Ebene derzeit nicht verfügbar', 'rose');
+    }
+  });
 
   document.getElementById('checkTidalHeuristicEnabled').addEventListener('change', (e) => {
     state.tidalHeuristicEnabled = e.target.checked;
