@@ -33,6 +33,7 @@ js/
   gpx.js                        GPX export
   optimizer.js                  Pure route computation + orchestrates a run
   waves.js                       Directional wave-height speed-penalty model
+  tidal.js                       German Bight/Wadden Sea tidal-current heuristic
   particleField.js                 Animated wind/current particle overlay
   departureWindow.js                Compares routes across a ±X hour window
   main.js                            Entry point: map init + event wiring
@@ -203,6 +204,59 @@ After that first setup, every merge to `main` redeploys automatically.
   a physical boat characteristic, not a preference) and not applied to the
   final "connect to the exact waypoint" segment, whose position is pinned
   to the target regardless of heading.
+
+## Data sources, tidal currents, and animation controls
+
+- **Wind**: pinned to Open-Meteo's `models=icon_seamless` (DWD's ICON-D2 →
+  ICON-EU → ICON-Global nest, ~2km resolution out to 48h, coarsening to
+  ~13km beyond that) instead of the default `best_match` — best_match
+  already resolves to this same blend for Northern European coastal
+  waters, but pinning it explicitly makes the behavior stable rather than
+  depending on Open-Meteo's own undocumented region routing.
+- **Waves**: Open-Meteo's marine endpoint on `best_match`, which resolves
+  to DWD's regional EWAM model (~5×7km) for European waters — the best
+  free coastal-wave option available via a plain CORS JSON API.
+- **Ocean current**: Open-Meteo's marine endpoint's only current source,
+  Météo-France/Copernicus Marine's merged surface-current product
+  (~9km global grid, does carry a tidal contribution via FES2014, but at a
+  resolution too coarse to resolve real Wadden Sea/Elbe-estuary tidal
+  streams — a 9km cell smears a 2-4kn channel current together with the
+  near-still water over an adjacent sandbank).
+- **Tidal currents (German Bight/Wadden Sea heuristic)**: a real BSH
+  Gezeitenstromatlas integration is not yet wired in — bundling BSH's
+  official tidal-current-atlas GIS data (from `gdi.bsh.de`) requires a
+  one-time offline download/preprocessing step that this project's dev
+  sandbox's restricted network egress can't currently perform. As an
+  interim measure, `js/tidal.js` adds a self-contained, dependency-free
+  approximation, gated to the German Bight/Wadden Sea/Elbe-Weser estuary:
+  a lunar M2 (12.4206h) + spring/neap (synodic-month beat) harmonic
+  estimate scales the reported current speed up toward a modeled
+  tidal-stream peak, fading back to the model's own value at slack —
+  deliberately leaving current *direction* untouched, since inventing a
+  flood/ebb axis without real bathymetry/atlas data risks being
+  confidently wrong, whereas Open-Meteo's own direction, however coarse,
+  is at least real model output. A "Tidenphase-Versatz" slider
+  (Isochronen tab) lets a sailor calibrate the M2 clock's phase against a
+  known local high-water time from a real tide table; a "Verstärkung"
+  slider controls the peak spring amplification (default 1.6×). The same
+  math also drives a "≈ Flut/Ebbe/Stillstand · Springtide/Nipptide" badge
+  in the weather HUD, purely as a cross-check indicator.
+- **Datenquellen panel** (weather HUD, "Datenquellen & Abdeckung"): shows
+  exactly which model backs each of wind/wave/current, its resolution, and
+  the actual forecast time window from the most recently fetched data —
+  so it's visible at a glance what data is live for what times, rather
+  than trusting it silently.
+- **Independent animation layer toggles**: wind/current/wave particle
+  animation (weather HUD) can now be switched on and off independently
+  instead of one all-or-nothing overlay — e.g. show only the tidal-current
+  stream without wind clutter. The header "Wetter" button remains a quick
+  all-three shortcut.
+- **Windy-style colour field**: a "Fläche" toggle fills the map with a
+  smooth, continuous colour field (wind speed, current speed, or wave
+  height — selectable) using a fixed blue→cyan→green→yellow→red domain so
+  the legend stays meaningful while panning, rendered from the same coarse
+  live-data grid the particles use, upscaled with the browser's own
+  bilinear image smoothing for a soft, Windy-like look at negligible cost.
 
 ## Notes on production readiness
 

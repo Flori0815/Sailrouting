@@ -26,8 +26,60 @@ const MAX_PX_PER_FRAME = 5.5;
 const WAVE_SPEED_SCALE = 1.4;
 const FLOW_SPEED_SCALE = 0.35;
 
+// Windy-style colour-filled background: each enabled parameter is mapped
+// through a fixed (not auto-scaled) domain so the legend stays meaningful
+// as you pan — a given color always means the same wind speed, wherever
+// you look. Rendered at coarse grid resolution into a tiny offscreen
+// canvas, then drawn scaled-up onto the visible canvas each frame; the
+// browser's own image smoothing does the bilinear interpolation for free,
+// which is cheap and gives the same soft continuous look Windy has instead
+// of a blocky per-cell fill.
+const COLOR_DOMAINS = {
+  wind: { max: 35, unit: 'kn', label: 'Wind' },
+  current: { max: 4, unit: 'kn', label: 'Strömung' },
+  wave: { max: 4, unit: 'm', label: 'Welle' }
+};
+// Blue (calm) -> cyan -> green -> yellow -> orange -> red (strong), the
+// same family of stops used by Windy/earth.nullschool-style overlays.
+const COLOR_STOPS = [
+  [0.00, 30, 60, 114],
+  [0.20, 34, 139, 180],
+  [0.40, 46, 184, 138],
+  [0.60, 190, 210, 60],
+  [0.80, 235, 150, 40],
+  [1.00, 214, 40, 40]
+];
+
+function colorRamp(value, max) {
+  const t = Math.max(0, Math.min(1, value / max));
+  let lo = COLOR_STOPS[0], hi = COLOR_STOPS[COLOR_STOPS.length - 1];
+  for (let i = 0; i < COLOR_STOPS.length - 1; i++) {
+    if (t >= COLOR_STOPS[i][0] && t <= COLOR_STOPS[i + 1][0]) {
+      lo = COLOR_STOPS[i]; hi = COLOR_STOPS[i + 1];
+      break;
+    }
+  }
+  const span = hi[0] - lo[0];
+  const f = span > 0 ? (t - lo[0]) / span : 0;
+  return [
+    Math.round(lo[1] + f * (hi[1] - lo[1])),
+    Math.round(lo[2] + f * (hi[2] - lo[2])),
+    Math.round(lo[3] + f * (hi[3] - lo[3]))
+  ];
+}
+
+export function colorScaleCss(param) {
+  const domain = COLOR_DOMAINS[param];
+  const stops = COLOR_STOPS.map(([t, r, g, b]) => `rgb(${r},${g},${b}) ${(t * 100).toFixed(0)}%`);
+  return { css: `linear-gradient(90deg, ${stops.join(', ')})`, max: domain.max, unit: domain.unit, label: domain.label };
+}
+
 let canvas = null;
 let ctx = null;
+let colorCanvas = null;
+let colorCtx = null;
+let colorGridCanvas = null;
+let colorGridCtx = null;
 let cssWidth = 0;
 let cssHeight = 0;
 let animationHandle = null;
@@ -50,7 +102,7 @@ function bearingToUnitVector(dirDeg) {
 // showing live "now" conditions regardless of a simulated voyage clock.
 export function setFieldTime(date) {
   fieldTimeOverride = date instanceof Date ? date : new Date(date);
-  if (state.isWeatherOverlayVisible) scheduleFieldRefresh();
+  if (isAnyLayerActive()) scheduleFieldRefresh();
 }
 
 async function rebuildField() {
@@ -95,6 +147,35 @@ async function rebuildField() {
     curU, curV, curSpeed,
     waveU, waveV, waveHeight
   };
+
+  rebuildColorGrid();
+}
+
+// Paints the coarse sample grid into a tiny offscreen canvas, one pixel per
+// grid cell — the visible canvas then draws this scaled way up each frame
+// (see stepAndDraw), letting the browser's own bilinear image scaling do
+// the smoothing instead of computing it by hand every frame.
+function rebuildColorGrid() {
+  if (!field || !colorGridCtx) return;
+  const { cols, rows, windSpeed, curSpeed, waveHeight } = field;
+  const sField = state.colorFieldParam === 'wind' ? windSpeed : state.colorFieldParam === 'current' ? curSpeed : waveHeight;
+  const domain = COLOR_DOMAINS[state.colorFieldParam];
+
+  const img = colorGridCtx.createImageData(cols, rows);
+  // field rows run south (0) -> north (rows-1), but image rows run top (0)
+  // -> bottom, and north is up on screen — flip vertically when writing.
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const srcIdx = row * cols + col;
+      const dstIdx = (rows - 1 - row) * cols + col;
+      const [r, g, b] = colorRamp(sField[srcIdx], domain.max);
+      img.data[dstIdx * 4] = r;
+      img.data[dstIdx * 4 + 1] = g;
+      img.data[dstIdx * 4 + 2] = b;
+      img.data[dstIdx * 4 + 3] = 150;
+    }
+  }
+  colorGridCtx.putImageData(img, 0, 0);
 }
 
 function scheduleFieldRefresh() {
@@ -155,6 +236,32 @@ function resizeCanvas() {
   canvas.width = cssWidth * dpr;
   canvas.height = cssHeight * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  colorCanvas.style.width = `${cssWidth}px`;
+  colorCanvas.style.height = `${cssHeight}px`;
+  colorCanvas.width = cssWidth * dpr;
+  colorCanvas.height = cssHeight * dpr;
+  colorCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+// Draws the coarse color grid, scaled up to cover its sampled lat/lng
+// bounds projected to current screen coordinates — recomputed every frame
+// (cheap: one drawImage call) so it tracks pan/zoom exactly like the
+// particles do, without waiting for a 'moveend' data refresh.
+function drawColorField() {
+  colorCtx.clearRect(0, 0, cssWidth, cssHeight);
+  if (!state.isColorFieldVisible || !field) return;
+
+  const { bounds } = field;
+  const topLeft = state.map.latLngToContainerPoint([bounds.north, bounds.west]);
+  const bottomRight = state.map.latLngToContainerPoint([bounds.south, bounds.east]);
+
+  colorCtx.imageSmoothingEnabled = true;
+  colorCtx.drawImage(
+    colorGridCanvas,
+    topLeft.x, topLeft.y,
+    bottomRight.x - topLeft.x, bottomRight.y - topLeft.y
+  );
 }
 
 function stepAndDraw() {
@@ -162,6 +269,8 @@ function stepAndDraw() {
     animationHandle = requestAnimationFrame(stepAndDraw);
     return;
   }
+
+  drawColorField();
 
   // Fade previous strokes by reducing the canvas's own alpha (does not tint
   // the map underneath), leaving short motion trails behind each particle.
@@ -172,6 +281,7 @@ function stepAndDraw() {
   ctx.lineCap = 'round';
 
   for (const p of particles) {
+    if (!state.animLayers[p.kind]) continue;
     if (!p.initialized) respawnParticle(p);
     if (!field) break;
 
@@ -220,13 +330,57 @@ function stepAndDraw() {
   animationHandle = requestAnimationFrame(stepAndDraw);
 }
 
+function isAnyLayerActive() {
+  return state.isWeatherOverlayVisible || state.isColorFieldVisible;
+}
+
+// Starts/stops the shared render loop and shows/hides both canvases based
+// on the combined state of the three particle toggles and the colour
+// field toggle, so e.g. turning off every particle layer but leaving the
+// colour field on keeps the loop running (and vice versa).
+function syncActiveState() {
+  const active = isAnyLayerActive();
+  if (active) {
+    canvas.style.display = 'block';
+    colorCanvas.style.display = 'block';
+    if (!animationHandle) {
+      resizeCanvas();
+      particles.forEach(p => { p.initialized = false; });
+      rebuildField();
+      animationHandle = requestAnimationFrame(stepAndDraw);
+    }
+  } else {
+    canvas.style.display = 'none';
+    colorCanvas.style.display = 'none';
+    if (animationHandle) {
+      cancelAnimationFrame(animationHandle);
+      animationHandle = null;
+    }
+    if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (colorCtx) colorCtx.clearRect(0, 0, colorCanvas.width, colorCanvas.height);
+  }
+}
+
 export function initParticleField() {
+  // Colour field sits below the particle canvas (lower z-index) so
+  // particle streaks stay legible drawn on top of it.
+  colorCanvas = document.createElement('canvas');
+  colorCanvas.className = 'weather-color-canvas';
+  colorCanvas.style.cssText = 'position:absolute; top:0; left:0; pointer-events:none; z-index:440; display:none;';
+  state.map.getContainer().appendChild(colorCanvas);
+  colorCtx = colorCanvas.getContext('2d');
+
   canvas = document.createElement('canvas');
   canvas.className = 'weather-particle-canvas';
   canvas.style.cssText = 'position:absolute; top:0; left:0; pointer-events:none; z-index:450; display:none;';
   state.map.getContainer().appendChild(canvas);
   ctx = canvas.getContext('2d');
   resizeCanvas();
+
+  colorGridCanvas = document.createElement('canvas');
+  colorGridCanvas.width = GRID_COLS;
+  colorGridCanvas.height = GRID_ROWS;
+  colorGridCtx = colorGridCanvas.getContext('2d');
 
   particles = [
     ...Array.from({ length: WIND_PARTICLE_COUNT }, () => makeParticle('wind')),
@@ -235,30 +389,32 @@ export function initParticleField() {
   ];
 
   state.map.on('moveend', () => {
-    if (state.isWeatherOverlayVisible) scheduleFieldRefresh();
+    if (isAnyLayerActive()) scheduleFieldRefresh();
   });
   window.addEventListener('resize', () => {
-    if (state.isWeatherOverlayVisible) resizeCanvas();
+    if (isAnyLayerActive()) resizeCanvas();
   });
 }
 
-export function toggleWeatherOverlay() {
-  state.isWeatherOverlayVisible = !state.isWeatherOverlayVisible;
+// Sets one particle layer's (wind/current/wave) visibility independently
+// of the other two. Returns the new value.
+export function setLayerVisible(kind, visible) {
+  state.animLayers[kind] = visible;
+  syncActiveState();
+  return visible;
+}
 
-  if (state.isWeatherOverlayVisible) {
-    canvas.style.display = 'block';
-    resizeCanvas();
-    particles.forEach(p => { p.initialized = false; });
-    rebuildField();
-    if (!animationHandle) animationHandle = requestAnimationFrame(stepAndDraw);
-  } else {
-    canvas.style.display = 'none';
-    if (animationHandle) {
-      cancelAnimationFrame(animationHandle);
-      animationHandle = null;
-    }
-    if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
-  }
+export function isLayerVisible(kind) {
+  return state.animLayers[kind];
+}
 
-  return state.isWeatherOverlayVisible;
+export function setColorFieldVisible(visible) {
+  state.isColorFieldVisible = visible;
+  syncActiveState();
+  return visible;
+}
+
+export function setColorFieldParam(param) {
+  state.colorFieldParam = param;
+  rebuildColorGrid();
 }
