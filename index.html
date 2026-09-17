@@ -63,8 +63,8 @@
         <span id="seamarksIndicator" class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
       </button>
 
-      <!-- Wind/Current Overlay Toggle -->
-      <button id="btnToggleWeatherOverlay" title="Animierte Wind-, Strom- & Wellen-Visualisierung ein/ausblenden" aria-label="Animierte Wind-, Strömungs- und Wellen-Visualisierung ein/ausblenden" class="glass-panel p-2 md:px-3 md:py-2 rounded-xl text-sky-300 hover:text-white shadow-lg border border-slate-700/80 flex items-center gap-1.5 active:scale-95 transition-transform">
+      <!-- Wind/Current Overlay Toggle (expands the per-layer controls in the Wetter-HUD) -->
+      <button id="btnToggleWeatherOverlay" title="Wetter-Animation Bedienfeld ein/ausblenden" aria-label="Wetter-Animation Bedienfeld ein/ausblenden" class="glass-panel p-2 md:px-3 md:py-2 rounded-xl text-sky-300 hover:text-white shadow-lg border border-slate-700/80 flex items-center gap-1.5 active:scale-95 transition-transform">
         <i data-lucide="wind" class="w-4 h-4 text-sky-400"></i>
         <span class="hidden md:inline text-xs font-medium">Wetter</span>
         <span id="weatherOverlayIndicator" class="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
@@ -94,47 +94,90 @@
           <i data-lucide="chevron-up" class="w-3.5 h-3.5"></i>
         </button>
       </div>
-      <div id="hudBody" class="grid grid-cols-2 gap-2 pt-2 text-xs">
-        <div class="bg-marine-900/80 p-1.5 rounded-lg border border-slate-800">
-          <div class="text-[10px] text-slate-400">Wahrer Wind (TWS/D)</div>
-          <div class="font-mono font-bold text-sky-300 flex items-center gap-1">
-            <span id="hudTws">14.0</span> kn
-            <span id="hudTwdArrow" class="inline-block transform transition-transform">↓</span>
-            <span id="hudTwd" class="text-slate-300 text-[10px]">240°</span>
+      <div id="hudBody" class="pt-2 text-xs">
+        <!-- Per-layer animation toggles -->
+        <div class="grid grid-cols-4 gap-1 pb-2 mb-2 border-b border-slate-800">
+          <button id="btnLayerWind" data-kind="wind" title="Wind-Animation ein/ausblenden" aria-pressed="false" class="anim-layer-btn flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[9px] font-medium text-slate-500 bg-marine-900/60 border border-slate-800 active:scale-95 transition-transform">
+            <i data-lucide="wind" class="w-3.5 h-3.5"></i> Wind
+          </button>
+          <button id="btnLayerCurrent" data-kind="current" title="Strömungs-Animation ein/ausblenden" aria-pressed="false" class="anim-layer-btn flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[9px] font-medium text-slate-500 bg-marine-900/60 border border-slate-800 active:scale-95 transition-transform">
+            <i data-lucide="waves" class="w-3.5 h-3.5"></i> Strom
+          </button>
+          <button id="btnLayerWave" data-kind="wave" title="Wellen-Animation ein/ausblenden" aria-pressed="false" class="anim-layer-btn flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[9px] font-medium text-slate-500 bg-marine-900/60 border border-slate-800 active:scale-95 transition-transform">
+            <i data-lucide="droplets" class="w-3.5 h-3.5"></i> Welle
+          </button>
+          <button id="btnLayerColorField" title="Farbfläche (wie bei Windy) ein/ausblenden" aria-pressed="false" class="flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[9px] font-medium text-slate-500 bg-marine-900/60 border border-slate-800 active:scale-95 transition-transform">
+            <i data-lucide="palette" class="w-3.5 h-3.5"></i> Fläche
+          </button>
+        </div>
+
+        <div id="colorFieldControls" class="hidden pb-2 mb-2 border-b border-slate-800 space-y-1.5">
+          <div class="flex items-center justify-between text-[10px]">
+            <span class="text-slate-400">Farbfläche zeigt:</span>
+            <label class="sr-only" for="colorFieldParamSelect">Farbfläche Parameter</label>
+            <select id="colorFieldParamSelect" class="bg-marine-900 text-sky-300 border border-slate-700 rounded-lg px-1.5 py-1 text-[10px] focus:outline-none focus:border-sky-400 cursor-pointer">
+              <option value="wind">Wind</option>
+              <option value="current">Strömung</option>
+              <option value="wave">Welle</option>
+            </select>
+          </div>
+          <div id="colorFieldGradientBar" class="h-2 rounded-full"></div>
+          <div class="flex justify-between text-[9px] text-slate-500">
+            <span>0</span>
+            <span id="colorFieldLegendLabel">Wind</span>
+            <span id="colorFieldLegendMax">35 kn</span>
           </div>
         </div>
 
-        <div class="bg-marine-900/80 p-1.5 rounded-lg border border-slate-800">
-          <div class="text-[10px] text-slate-400">Gezeitenstrom</div>
-          <div class="font-mono font-bold text-emerald-400 flex items-center gap-1">
-            <span id="hudCurSpeed">0.9</span> kn
-            <span id="hudCurArrow" class="inline-block transform transition-transform">→</span>
-            <span id="hudCurDir" class="text-slate-300 text-[10px]">120°</span>
+        <div class="grid grid-cols-2 gap-2">
+          <div class="bg-marine-900/80 p-1.5 rounded-lg border border-slate-800">
+            <div class="text-[10px] text-slate-400">Wahrer Wind (TWS/D)</div>
+            <div class="font-mono font-bold text-sky-300 flex items-center gap-1">
+              <span id="hudTws">14.0</span> kn
+              <span id="hudTwdArrow" class="inline-block transform transition-transform">↓</span>
+              <span id="hudTwd" class="text-slate-300 text-[10px]">240°</span>
+            </div>
+          </div>
+
+          <div class="bg-marine-900/80 p-1.5 rounded-lg border border-slate-800">
+            <div class="text-[10px] text-slate-400">Gezeitenstrom</div>
+            <div class="font-mono font-bold text-emerald-400 flex items-center gap-1">
+              <span id="hudCurSpeed">0.9</span> kn
+              <span id="hudCurArrow" class="inline-block transform transition-transform">→</span>
+              <span id="hudCurDir" class="text-slate-300 text-[10px]">120°</span>
+            </div>
+            <div id="hudTidalPhase" class="text-[9px] text-slate-500 mt-0.5"></div>
+          </div>
+
+          <div class="bg-marine-900/80 p-1.5 rounded-lg border border-slate-800">
+            <div class="text-[10px] text-slate-400">Dehler STW (FdW)</div>
+            <div class="font-mono font-bold text-amber-300">
+              <span id="hudStw">6.4</span> kn
+            </div>
+          </div>
+
+          <div class="bg-marine-900/80 p-1.5 rounded-lg border border-slate-800">
+            <div class="text-[10px] text-slate-400">Ground Speed (FgG)</div>
+            <div class="font-mono font-bold text-white">
+              <span id="hudSog">6.8</span> kn
+            </div>
+          </div>
+
+          <div class="bg-marine-900/80 p-1.5 rounded-lg border border-slate-800 col-span-2">
+            <div class="text-[10px] text-slate-400">Wellenhöhe / -richtung</div>
+            <div class="font-mono font-bold text-violet-300 flex items-center gap-1">
+              <span id="hudWaveHeight">0.4</span> m
+              <span id="hudWaveArrow" class="inline-block transform transition-transform">↓</span>
+              <span id="hudWaveDir" class="text-slate-300 text-[10px]">240°</span>
+            </div>
           </div>
         </div>
 
-        <div class="bg-marine-900/80 p-1.5 rounded-lg border border-slate-800">
-          <div class="text-[10px] text-slate-400">Dehler STW (FdW)</div>
-          <div class="font-mono font-bold text-amber-300">
-            <span id="hudStw">6.4</span> kn
-          </div>
-        </div>
-
-        <div class="bg-marine-900/80 p-1.5 rounded-lg border border-slate-800">
-          <div class="text-[10px] text-slate-400">Ground Speed (FgG)</div>
-          <div class="font-mono font-bold text-white">
-            <span id="hudSog">6.8</span> kn
-          </div>
-        </div>
-
-        <div class="bg-marine-900/80 p-1.5 rounded-lg border border-slate-800 col-span-2">
-          <div class="text-[10px] text-slate-400">Wellenhöhe / -richtung</div>
-          <div class="font-mono font-bold text-violet-300 flex items-center gap-1">
-            <span id="hudWaveHeight">0.4</span> m
-            <span id="hudWaveArrow" class="inline-block transform transition-transform">↓</span>
-            <span id="hudWaveDir" class="text-slate-300 text-[10px]">240°</span>
-          </div>
-        </div>
+        <button id="btnToggleDataSources" aria-expanded="false" class="w-full mt-2 flex items-center justify-between text-[10px] text-slate-400 hover:text-slate-200 pt-2 border-t border-slate-800">
+          <span class="flex items-center gap-1"><i data-lucide="database" class="w-3 h-3"></i> Datenquellen &amp; Abdeckung</span>
+          <i data-lucide="chevron-down" class="w-3 h-3" id="dataSourcesChevron"></i>
+        </button>
+        <div id="dataSourcesPanel" class="hidden mt-1.5 space-y-1.5 text-[9.5px] text-slate-400 leading-relaxed"></div>
       </div>
     </div>
   </div>
@@ -348,6 +391,36 @@
         <p class="text-[11px] text-slate-400 leading-relaxed">
           Wie stark Wellenhöhe und -richtung die Bootsgeschwindigkeit bremsen. Seegang von vorne bremst am stärksten, von achtern am wenigsten. 0% = ignorieren.
         </p>
+      </div>
+
+      <div class="bg-marine-900/80 p-3 rounded-xl border border-slate-800 space-y-2">
+        <div class="flex items-center justify-between text-xs">
+          <span class="font-bold text-white flex items-center gap-1.5">
+            <i data-lucide="moon" class="w-4 h-4 text-emerald-400"></i>
+            Gezeitenstrom-Näherung
+          </span>
+          <input id="checkTidalHeuristicEnabled" type="checkbox" checked class="w-4 h-4 rounded text-emerald-500 focus:ring-0 cursor-pointer">
+        </div>
+        <p class="text-[11px] text-slate-400 leading-relaxed">
+          Ein echter BSH-Gezeitenstromatlas ist (noch) nicht eingebunden — bis dahin verstärkt diese Näherung die Strömungsgeschwindigkeit in der Deutschen Bucht/im Wattenmeer anhand einer Mond-Gezeiten-Rechnung (M2/Springtide), ohne die vom Wettermodell gemeldete Richtung zu verändern. Nur innerhalb der Deutschen Bucht aktiv.
+        </p>
+        <div>
+          <div class="flex justify-between text-slate-300 mb-1">
+            <span id="tidalAmplitudeSliderLabel">Verstärkung (Spring, max.):</span>
+            <span class="font-mono text-emerald-400 font-bold" id="tidalAmplitudeLabel">1.6×</span>
+          </div>
+          <input id="tidalAmplitudeSlider" type="range" min="1" max="3" value="1.6" step="0.1" aria-labelledby="tidalAmplitudeSliderLabel" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-400">
+        </div>
+        <div>
+          <div class="flex justify-between text-slate-300 mb-1">
+            <span id="tidalPhaseOffsetSliderLabel">Tidenphase-Versatz:</span>
+            <span class="font-mono text-emerald-400 font-bold" id="tidalPhaseOffsetLabel">+0.0 h</span>
+          </div>
+          <input id="tidalPhaseOffsetSlider" type="range" min="-6" max="6" value="0" step="0.5" aria-labelledby="tidalPhaseOffsetSliderLabel" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-400">
+          <p class="text-[10px] text-slate-500 mt-1 leading-relaxed">
+            Mit einer echten Gezeitentafel für dein Revier abgleichen und hier nachjustieren, falls Flut/Ebbe-Anzeige nicht zur Hochwasserzeit passt.
+          </p>
+        </div>
       </div>
     </div>
 

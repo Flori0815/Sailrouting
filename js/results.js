@@ -1,3 +1,55 @@
+import { state } from './state.js';
+import { getDataSourceInfo } from './metocean.js';
+import { getTidalPhaseEstimate, isWithinTidalHeuristicRegion } from './tidal.js';
+
+export function updateTidalPhaseBadge(lat, lng, date = new Date()) {
+  const el = document.getElementById('hudTidalPhase');
+  if (!el) return;
+  if (!isWithinTidalHeuristicRegion(lat, lng)) {
+    el.textContent = 'außerhalb Näherungsgebiet (Deutsche Bucht)';
+    return;
+  }
+  const { stateLabel, springNeapLabel } = getTidalPhaseEstimate(date);
+  el.textContent = `≈ ${stateLabel} · ${springNeapLabel}`;
+}
+
+function formatCoverage(coverage) {
+  if (!coverage) return 'noch keine Daten geladen';
+  // Open-Meteo's hourly.time strings are UTC but carry no 'Z' suffix — the
+  // rest of the app treats them as raw string keys (matched against
+  // date.toISOString() prefixes) and never parses them as Dates, so this
+  // is the one place that needs the explicit UTC marker to avoid the
+  // browser silently reinterpreting them as local time.
+  const fmt = (iso) => new Date(`${iso}Z`).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
+  return `${fmt(coverage.start)} → ${fmt(coverage.end)}`;
+}
+
+export function renderDataSourcesPanel() {
+  const panel = document.getElementById('dataSourcesPanel');
+  if (!panel) return;
+  const info = getDataSourceInfo();
+  panel.innerHTML = '';
+
+  [['Wind', info.wind], ['Wellen', info.wave], ['Strömung', info.current]].forEach(([title, src]) => {
+    const row = document.createElement('div');
+    const t = document.createElement('div');
+    t.className = 'text-slate-300 font-semibold';
+    t.textContent = title;
+    const l = document.createElement('div');
+    l.textContent = `${src.label} (${src.resolution})`;
+    const c = document.createElement('div');
+    c.className = 'text-slate-500';
+    c.textContent = `Abdeckung: ${formatCoverage(src.coverage)}`;
+    row.append(t, l, c);
+    panel.appendChild(row);
+  });
+
+  const tidalRow = document.createElement('div');
+  tidalRow.className = 'pt-1 border-t border-slate-800 text-slate-500';
+  tidalRow.textContent = `Gezeiten-Näherung: ${state.tidalHeuristicEnabled ? 'aktiv' : 'inaktiv'} (nur Deutsche Bucht/Wattenmeer) — ersetzt keinen offiziellen BSH-Gezeitenstromatlas.`;
+  panel.appendChild(tidalRow);
+}
+
 export function updateHudDisplay(leg) {
   document.getElementById('hudTws').textContent = leg.tws;
   document.getElementById('hudTwd').textContent = `${leg.twd}°`;
@@ -6,6 +58,9 @@ export function updateHudDisplay(leg) {
   document.getElementById('hudCurSpeed').textContent = leg.currentSpeed;
   document.getElementById('hudCurDir').textContent = `${leg.currentDir}°`;
   document.getElementById('hudCurArrow').style.transform = `rotate(${leg.currentDir}deg)`;
+  if (leg.midCoord && leg.depTime) {
+    updateTidalPhaseBadge(leg.midCoord[0], leg.midCoord[1], leg.depTime);
+  }
 
   document.getElementById('hudStw').textContent = leg.stw;
   document.getElementById('hudSog').textContent = leg.sog;

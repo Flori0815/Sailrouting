@@ -10,8 +10,9 @@ import { drawPolarDiagramCanvas } from './polarChart.js';
 import { initVoyageScrubber } from './voyage.js';
 import { exportGpxFile } from './gpx.js';
 import { triggerIsochroneRouteOptimization } from './optimizer.js';
-import { initParticleField, toggleWeatherOverlay } from './particleField.js';
+import { initParticleField, setLayerVisible, isLayerVisible, setColorFieldVisible, setColorFieldParam, colorScaleCss } from './particleField.js';
 import { findBestDepartureTime, toggleDepartureVariantsOnMap } from './departureWindow.js';
+import { updateTidalPhaseBadge, renderDataSourcesPanel } from './results.js';
 
 function initMap() {
   state.map = L.map('map', {
@@ -105,16 +106,90 @@ function wireControls() {
     }
   });
 
+  const LAYER_ACCENTS = { wind: 'text-sky-300 border-sky-400/50 bg-sky-500/10', current: 'text-teal-300 border-teal-400/50 bg-teal-500/10', wave: 'text-violet-300 border-violet-400/50 bg-violet-500/10' };
+  const INACTIVE_LAYER_CLASS = 'text-slate-500 bg-marine-900/60 border-slate-800';
+
+  function refreshWeatherIndicator() {
+    const anyOn = state.animLayers.wind || state.animLayers.current || state.animLayers.wave;
+    document.getElementById('weatherOverlayIndicator').className = `w-1.5 h-1.5 rounded-full ${anyOn ? 'bg-sky-400' : 'bg-slate-500'}`;
+  }
+
+  function refreshLayerButtonStyle(kind) {
+    const btn = document.getElementById(`btnLayer${kind.charAt(0).toUpperCase()}${kind.slice(1)}`);
+    const on = state.animLayers[kind];
+    btn.setAttribute('aria-pressed', String(on));
+    btn.className = `anim-layer-btn flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[9px] font-medium border active:scale-95 transition-transform ${on ? LAYER_ACCENTS[kind] : INACTIVE_LAYER_CLASS}`;
+  }
+
+  ['wind', 'current', 'wave'].forEach((kind) => {
+    refreshLayerButtonStyle(kind);
+    document.getElementById(`btnLayer${kind.charAt(0).toUpperCase()}${kind.slice(1)}`).addEventListener('click', () => {
+      setLayerVisible(kind, !isLayerVisible(kind));
+      refreshLayerButtonStyle(kind);
+      refreshWeatherIndicator();
+    });
+  });
+
+  // Header button: quick all-layers toggle (turns everything on if any
+  // layer is currently off, or everything off if all three are on),
+  // leaving the fine-grained per-layer buttons in the HUD for individual
+  // control.
   document.getElementById('btnToggleWeatherOverlay').addEventListener('click', () => {
-    const isVisible = toggleWeatherOverlay();
-    const ind = document.getElementById('weatherOverlayIndicator');
-    if (isVisible) {
-      ind.className = 'w-1.5 h-1.5 rounded-full bg-sky-400';
-      showToast('Wind- & Strom-Overlay: Sichtbar', 'sky');
-    } else {
-      ind.className = 'w-1.5 h-1.5 rounded-full bg-slate-500';
-      showToast('Wind- & Strom-Overlay: Ausgeblendet', 'slate');
+    const anyOn = state.animLayers.wind || state.animLayers.current || state.animLayers.wave;
+    const next = !anyOn;
+    ['wind', 'current', 'wave'].forEach((kind) => {
+      setLayerVisible(kind, next);
+      refreshLayerButtonStyle(kind);
+    });
+    refreshWeatherIndicator();
+    showToast(next ? 'Wetter-Animation: Sichtbar' : 'Wetter-Animation: Ausgeblendet', next ? 'sky' : 'slate');
+  });
+
+  const colorFieldBtn = document.getElementById('btnLayerColorField');
+  const colorFieldControls = document.getElementById('colorFieldControls');
+  function refreshColorFieldUI() {
+    const on = state.isColorFieldVisible;
+    colorFieldBtn.setAttribute('aria-pressed', String(on));
+    colorFieldBtn.className = `flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[9px] font-medium border active:scale-95 transition-transform ${on ? 'text-amber-300 border-amber-400/50 bg-amber-500/10' : INACTIVE_LAYER_CLASS}`;
+    colorFieldControls.classList.toggle('hidden', !on);
+    if (on) {
+      const scale = colorScaleCss(state.colorFieldParam);
+      document.getElementById('colorFieldGradientBar').style.background = scale.css;
+      document.getElementById('colorFieldLegendLabel').textContent = scale.label;
+      document.getElementById('colorFieldLegendMax').textContent = `${scale.max} ${scale.unit}`;
     }
+  }
+  colorFieldBtn.addEventListener('click', () => {
+    setColorFieldVisible(!state.isColorFieldVisible);
+    refreshColorFieldUI();
+  });
+  document.getElementById('colorFieldParamSelect').addEventListener('change', (e) => {
+    setColorFieldParam(e.target.value);
+    refreshColorFieldUI();
+  });
+  refreshColorFieldUI();
+
+  const dataSourcesPanel = document.getElementById('dataSourcesPanel');
+  const dataSourcesToggle = document.getElementById('btnToggleDataSources');
+  dataSourcesToggle.addEventListener('click', () => {
+    const isHidden = dataSourcesPanel.classList.toggle('hidden');
+    dataSourcesToggle.setAttribute('aria-expanded', String(!isHidden));
+    document.getElementById('dataSourcesChevron').setAttribute('data-lucide', isHidden ? 'chevron-down' : 'chevron-up');
+    window.lucide?.createIcons();
+    if (!isHidden) renderDataSourcesPanel();
+  });
+
+  document.getElementById('checkTidalHeuristicEnabled').addEventListener('change', (e) => {
+    state.tidalHeuristicEnabled = e.target.checked;
+  });
+  document.getElementById('tidalAmplitudeSlider').addEventListener('input', (e) => {
+    state.tidalAmplificationFactor = parseFloat(e.target.value);
+    document.getElementById('tidalAmplitudeLabel').textContent = `${state.tidalAmplificationFactor.toFixed(1)}×`;
+  });
+  document.getElementById('tidalPhaseOffsetSlider').addEventListener('input', (e) => {
+    state.tidalPhaseOffsetHours = parseFloat(e.target.value);
+    const label = document.getElementById('tidalPhaseOffsetLabel');
+    label.textContent = `${state.tidalPhaseOffsetHours >= 0 ? '+' : ''}${state.tidalPhaseOffsetHours.toFixed(1)} h`;
   });
 
   document.getElementById('btnFindBestDeparture').addEventListener('click', findBestDepartureTime);
@@ -212,6 +287,7 @@ function init() {
     initVoyageScrubber();
     drawPolarDiagramCanvas(16);
     loadPreset('helgoland');
+    updateTidalPhaseBadge(DEFAULT_MAP_CENTER[0], DEFAULT_MAP_CENTER[1], new Date());
   } catch (err) {
     console.error('Initialization failed', err);
     showToast('Initialisierung fehlgeschlagen. Bitte Seite neu laden.', 'rose');

@@ -1,10 +1,49 @@
-// Live wind and current data from Open-Meteo's free, no-key-required public APIs.
-// Called directly from the browser — no backend involved.
+// Live wind and current data from Open-Meteo's free, no-key-required public
+// APIs. Called directly from the browser — no backend involved.
+//
+// Wind is pinned to `models=icon_seamless` (DWD's ICON-D2 → ICON-EU →
+// ICON-Global nest, ~2km out to 48h) instead of the default `best_match`
+// — best_match already resolves to this same blend for Northern European
+// coastal waters, but pinning it explicitly makes the behavior stable and
+// documented rather than depending on Open-Meteo's own undocumented region
+// routing. The marine endpoint (waves + current) is left on `best_match`:
+// it already routes wave to DWD's regional EWAM model and current to
+// Météo-France/CMEMS's merged surface-current product (the only current
+// source Open-Meteo has), and there's no single `models=` value that
+// selects the right model for both variables at once.
+import { applyTidalAmplification } from './tidal.js';
 
 const FALLBACK = { tws: 14.0, twd: 240, curSpeed: 0.8, curDir: 120, waveHeight: 0.4, waveDir: 240 };
 const FETCH_TIMEOUT_MS = 8000;
 
 const metoceanCache = new Map();
+
+// Static source labels (see comment above) plus the time window of the
+// most recently fetched hourly data, so the UI can show the sailor exactly
+// what's backing the numbers and how far forecast coverage actually
+// extends — see js/results.js#renderDataSourcePanel.
+const lastCoverage = { wind: null, marine: null, fetchedAt: null };
+
+export function getDataSourceInfo() {
+  return {
+    wind: {
+      label: 'ICON-D2 / ICON-EU / ICON-Global (DWD)',
+      resolution: '~2 km (D2, 48h) → ~7 km (EU, 5d) → ~13 km (Global, 7.5d)',
+      coverage: lastCoverage.wind
+    },
+    wave: {
+      label: 'DWD EWAM (European Wave Model)',
+      resolution: '~5×7 km, Nordsee/Europa',
+      coverage: lastCoverage.marine
+    },
+    current: {
+      label: 'Météo-France / Copernicus Marine (SMOC, global)',
+      resolution: '~9 km, inkl. grobem Gezeiten-Anteil (FES2014)',
+      coverage: lastCoverage.marine
+    },
+    fetchedAt: lastCoverage.fetchedAt
+  };
+}
 
 async function fetchWithTimeout(url, timeoutMs) {
   const controller = new AbortController();
@@ -23,7 +62,7 @@ export async function fetchMetoceanData(lat, lng, targetDate = new Date()) {
   try {
     const latFmt = lat.toFixed(4);
     const lngFmt = lng.toFixed(4);
-    const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latFmt}&longitude=${lngFmt}&hourly=wind_speed_10m,wind_direction_10m&wind_speed_unit=kn&forecast_days=3`;
+    const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latFmt}&longitude=${lngFmt}&hourly=wind_speed_10m,wind_direction_10m&wind_speed_unit=kn&models=icon_seamless&forecast_days=3`;
     const marineUrl = `https://marine-api.open-meteo.com/v1/marine?latitude=${latFmt}&longitude=${lngFmt}&hourly=ocean_current_velocity,ocean_current_direction,wave_height,wave_direction&forecast_days=3`;
 
     const [wRes, mRes] = await Promise.allSettled([
@@ -41,6 +80,7 @@ export async function fetchMetoceanData(lat, lng, targetDate = new Date()) {
         if (idx === -1) idx = 0;
         tws = wJson.hourly.wind_speed_10m[idx] ?? FALLBACK.tws;
         twd = wJson.hourly.wind_direction_10m[idx] ?? FALLBACK.twd;
+        lastCoverage.wind = { start: wJson.hourly.time[0], end: wJson.hourly.time[wJson.hourly.time.length - 1] };
       }
     }
 
@@ -62,13 +102,22 @@ export async function fetchMetoceanData(lat, lng, targetDate = new Date()) {
           waveHeight = wh;
           waveDir = mJson.hourly.wave_direction?.[idx] ?? FALLBACK.waveDir;
         }
+        lastCoverage.marine = { start: mJson.hourly.time[0], end: mJson.hourly.time[mJson.hourly.time.length - 1] };
       }
     }
+
+    lastCoverage.fetchedAt = new Date();
+
+    // German Bight/Wadden Sea tidal-stream amplification heuristic — see
+    // js/tidal.js for why this exists and what it deliberately does not do
+    // (it never touches direction, only magnitude, and only inside the
+    // region it's calibrated for).
+    const tidalAmplifiedCurSpeed = applyTidalAmplification(lat, lng, curSpeed, targetDate);
 
     const res = {
       tws: +tws.toFixed(1),
       twd: Math.round(twd),
-      curSpeed: +curSpeed.toFixed(1),
+      curSpeed: +tidalAmplifiedCurSpeed.toFixed(1),
       curDir: Math.round(curDir),
       waveHeight: +waveHeight.toFixed(1),
       waveDir: Math.round(waveDir)
