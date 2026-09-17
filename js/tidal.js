@@ -1,10 +1,7 @@
 import { state } from './state.js';
+import { getRealTidePhase, peekTidePhase, warmTideCache } from './bshTides.js';
 
-// Coarse, dependency-free approximation of German Bight / Wadden Sea tidal
-// current behavior — a stopgap pending a real BSH Gezeitenstromatlas
-// integration (that requires downloading and preprocessing BSH's GIS
-// dataset from gdi.bsh.de, which this project's dev sandbox cannot reach;
-// see README). Two deliberately separate roles:
+// German Bight / Wadden Sea tidal current modeling, in two layers:
 //
 // 1. MAGNITUDE correction (`applyTidalAmplification`): Open-Meteo's ocean
 //    current (js/metocean.js) comes from a ~9km global ocean model that
@@ -14,17 +11,23 @@ import { state } from './state.js';
 //    Bight/Wadden Sea this scales the reported current speed up toward a
 //    modeled tidal-stream peak — grounded in that known resolution
 //    limitation, not a fabricated signal.
-// 2. PHASE indicator (`getTidalPhaseEstimate`): a self-contained M2
-//    (principal lunar semidiurnal, 12.4206h) + spring/neap (synodic-month
-//    beat) harmonic estimate, computed from lunar-cycle astronomy alone —
-//    no live tide data or network call. Deliberately does NOT invent a
-//    flood/ebb current DIRECTION: without real bathymetry/atlas data, a
-//    guessed tidal axis could be confidently wrong, whereas Open-Meteo's
-//    own current direction, even coarse, is at least real model output.
-//    The phase estimate only drives a "Flut/Ebbe/Stillstand" + spring/neap
-//    badge for the sailor to cross-check against a real regional tide
-//    table — `state.tidalPhaseOffsetHours` lets them calibrate the M2
-//    clock against a known local high-water time.
+// 2. PHASE indicator (`getTidalPhaseEstimateAsync`): tries BSH's real,
+//    official Water Level Forecast API first (js/bshTides.js — a
+//    documented OGC API Features service, CC BY 4.0), which gives genuine
+//    high/low-water timing for actual gauge stations and anchors the
+//    flood/ebb/slack shape to real local tide timing rather than a generic
+//    lunar phase. Falls back to a self-contained M2 (principal lunar
+//    semidiurnal, 12.4206h) + spring/neap (synodic-month beat) harmonic
+//    estimate — computed from lunar-cycle astronomy alone, no network
+//    needed — whenever the real API is unreachable, times out, or doesn't
+//    cover the requested place/time. Neither path invents a flood/ebb
+//    current DIRECTION: without real current-vector data (BSH's tidal
+//    current atlas gives current, not water level, and isn't wired in as
+//    numeric data — see README), a guessed axis could be confidently
+//    wrong, whereas Open-Meteo's own current direction, even coarse, is at
+//    least real model output. `state.tidalPhaseOffsetHours` still lets a
+//    sailor nudge the *fallback* astronomical clock against a known local
+//    high-water time; it has no effect once real BSH data is in use.
 
 // Roughly the German Bight / Wadden Sea / Elbe-Weser estuary — the region
 // where tidal streams dominate and where Open-Meteo's ~9km ocean grid most
@@ -44,7 +47,10 @@ export function isWithinTidalHeuristicRegion(lat, lon) {
          lon >= REGION_BOUNDS.lonMin && lon <= REGION_BOUNDS.lonMax;
 }
 
-export function getTidalPhaseEstimate(date = new Date()) {
+// Astronomical fallback — no network, always available, but generic (not
+// anchored to any real station's actual tide timing). See
+// getTidalPhaseEstimateAsync for the real-data path this backs up.
+export function getTidalPhaseEstimateHeuristic(date = new Date()) {
   const offsetHours = state.tidalPhaseOffsetHours || 0;
   const hoursSinceEpoch = (date.getTime() - REF_NEW_MOON_MS) / 3600000 + offsetHours;
   const phaseFraction = (((hoursSinceEpoch % M2_PERIOD_HOURS) + M2_PERIOD_HOURS) % M2_PERIOD_HOURS) / M2_PERIOD_HOURS;
@@ -65,18 +71,44 @@ export function getTidalPhaseEstimate(date = new Date()) {
     springNeapFactor,
     isFlood: sinPhase >= 0,
     stateLabel,
-    springNeapLabel: springNeapFactor > 0.75 ? 'Springtide' : springNeapFactor < 0.55 ? 'Nipptide' : 'mittlere Tide'
+    springNeapLabel: springNeapFactor > 0.75 ? 'Springtide' : springNeapFactor < 0.55 ? 'Nipptide' : 'mittlere Tide',
+    source: 'Astronomische Näherung (M2)'
   };
+}
+
+// Tries BSH's real water-level forecast first (see js/bshTides.js), falling
+// back to the astronomical estimate on any failure or lack of coverage.
+// Always resolves — never throws — so callers never need their own
+// try/catch around this.
+export async function getTidalPhaseEstimateAsync(lat, lon, date = new Date()) {
+  try {
+    const real = await getRealTidePhase(lat, lon, date);
+    if (real) return real;
+  } catch (err) {
+    // Network/CORS/shape failure — fall through to the heuristic below.
+  }
+  return getTidalPhaseEstimateHeuristic(date);
 }
 
 // Scales a coarse ocean-model current speed up toward a modeled tidal-
 // stream peak within the German Bight, fading back to 1x (never below the
 // model's own value) toward slack water. Direction is left untouched.
+//
+// Deliberately synchronous and network-free: this runs inside
+// metocean.js#fetchMetoceanData, on the isochrone solver's hot path
+// (called on every search step). Awaiting a live BSH fetch here would
+// stack its latency on top of Open-Meteo's own, potentially stalling route
+// computation whenever BSH is slow or unreachable — for a refinement that
+// only nudges a multiplier, that's a bad trade. Instead this reads
+// whatever's already cached (peekTidePhase, instant, never blocks) and
+// separately fires a non-blocking cache warm-up so real data becomes
+// available for *future* calls without ever costing this one anything.
 export function applyTidalAmplification(lat, lon, curSpeedKn, date = new Date()) {
   if (!state.tidalHeuristicEnabled) return curSpeedKn;
   if (!isWithinTidalHeuristicRegion(lat, lon)) return curSpeedKn;
 
-  const { strength, springNeapFactor } = getTidalPhaseEstimate(date);
+  const real = peekTidePhase(lat, lon, date);
+  const { strength, springNeapFactor } = real || (warmTideCache(lat, lon), getTidalPhaseEstimateHeuristic(date));
   const amplitude = state.tidalAmplificationFactor ?? 1.6;
   const factor = 1 + (amplitude - 1) * strength * springNeapFactor;
   return +(curSpeedKn * factor).toFixed(2);

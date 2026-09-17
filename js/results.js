@@ -1,6 +1,13 @@
 import { state } from './state.js';
 import { getDataSourceInfo } from './metocean.js';
-import { getTidalPhaseEstimate, isWithinTidalHeuristicRegion } from './tidal.js';
+import { getTidalPhaseEstimateAsync, isWithinTidalHeuristicRegion } from './tidal.js';
+import { DEFAULT_MAP_CENTER } from './constants.js';
+
+// Monotonic guard: with rapid successive calls (voyage playback ticks up
+// to ~16/s) a slow real-data fetch for an earlier call could otherwise
+// resolve after a newer call already rendered its result, flickering the
+// badge back to stale data.
+let badgeRequestToken = 0;
 
 export function updateTidalPhaseBadge(lat, lng, date = new Date()) {
   const el = document.getElementById('hudTidalPhase');
@@ -9,8 +16,13 @@ export function updateTidalPhaseBadge(lat, lng, date = new Date()) {
     el.textContent = 'außerhalb Näherungsgebiet (Deutsche Bucht)';
     return;
   }
-  const { stateLabel, springNeapLabel } = getTidalPhaseEstimate(date);
-  el.textContent = `≈ ${stateLabel} · ${springNeapLabel}`;
+
+  const token = ++badgeRequestToken;
+  getTidalPhaseEstimateAsync(lat, lng, date).then(({ stateLabel, springNeapLabel, stationName }) => {
+    if (token !== badgeRequestToken) return; // superseded by a newer call
+    const sourceTag = stationName ? `BSH ${stationName}` : 'Näherung';
+    el.textContent = `${stateLabel} · ${springNeapLabel} (${sourceTag})`;
+  });
 }
 
 function formatCoverage(coverage) {
@@ -46,8 +58,19 @@ export function renderDataSourcesPanel() {
 
   const tidalRow = document.createElement('div');
   tidalRow.className = 'pt-1 border-t border-slate-800 text-slate-500';
-  tidalRow.textContent = `Gezeiten-Näherung: ${state.tidalHeuristicEnabled ? 'aktiv' : 'inaktiv'} (nur Deutsche Bucht/Wattenmeer) — ersetzt keinen offiziellen BSH-Gezeitenstromatlas.`;
+  tidalRow.textContent = state.tidalHeuristicEnabled
+    ? 'Gezeiten-Verstärkung: aktiv (nur Deutsche Bucht/Wattenmeer) — prüfe Quelle …'
+    : 'Gezeiten-Verstärkung: inaktiv';
   panel.appendChild(tidalRow);
+
+  if (state.tidalHeuristicEnabled) {
+    const center = state.map ? state.map.getCenter() : { lat: DEFAULT_MAP_CENTER[0], lng: DEFAULT_MAP_CENTER[1] };
+    getTidalPhaseEstimateAsync(center.lat, center.lng).then(({ stationName }) => {
+      tidalRow.textContent = stationName
+        ? `Gezeiten-Verstärkung: aktiv, Timing von BSH ${stationName} (echte Wasserstandsvorhersage).`
+        : 'Gezeiten-Verstärkung: aktiv, Timing über Mond-Näherung (BSH-Daten für diese Position/Zeit nicht verfügbar).';
+    });
+  }
 }
 
 export function updateHudDisplay(leg) {

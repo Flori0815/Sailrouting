@@ -32,16 +32,17 @@ export function toggleSidebar(open = null) {
   }
 }
 
-const TAB_IDS = ['waypointsTab', 'isochroneTab', 'polarsTab', 'hazardsTab', 'resultsTab'];
+const TAB_IDS = ['waypointsTab', 'isochroneTab', 'weatherTab', 'polarsTab', 'hazardsTab', 'resultsTab'];
 const TAB_BUTTON_IDS = {
   waypointsTab: 'tabBtnWaypoints',
   isochroneTab: 'tabBtnIsochrone',
+  weatherTab: 'tabBtnWeather',
   polarsTab: 'tabBtnPolars',
   hazardsTab: 'tabBtnHazards',
   resultsTab: 'tabBtnResults'
 };
 
-export function switchTab(tabId, onPolarsTab) {
+export function switchTab(tabId, onShow) {
   TAB_IDS.forEach(t => {
     const el = document.getElementById(t);
     const btn = document.getElementById(TAB_BUTTON_IDS[t]);
@@ -60,7 +61,7 @@ export function switchTab(tabId, onPolarsTab) {
     }
   });
 
-  if (tabId === 'polarsTab' && typeof onPolarsTab === 'function') {
-    onPolarsTab();
+  if (typeof onShow === 'function') {
+    onShow();
   }
 }

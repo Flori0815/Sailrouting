@@ -33,7 +33,9 @@ js/
   gpx.js                        GPX export
   optimizer.js                  Pure route computation + orchestrates a run
   waves.js                       Directional wave-height speed-penalty model
-  tidal.js                       German Bight/Wadden Sea tidal-current heuristic
+  tidal.js                       German Bight/Wadden Sea tidal-current modeling
+  bshTides.js                    Real BSH water-level forecast API client
+  bshWmsLayer.js                 Real BSH tidal-current WMS map overlay
   particleField.js                 Animated wind/current particle overlay
   departureWindow.js                Compares routes across a ±X hour window
   main.js                            Entry point: map init + event wiring
@@ -222,35 +224,62 @@ After that first setup, every merge to `main` redeploys automatically.
   resolution too coarse to resolve real Wadden Sea/Elbe-estuary tidal
   streams — a 9km cell smears a 2-4kn channel current together with the
   near-still water over an adjacent sandbank).
-- **Tidal currents (German Bight/Wadden Sea heuristic)**: a real BSH
-  Gezeitenstromatlas integration is not yet wired in — bundling BSH's
-  official tidal-current-atlas GIS data (from `gdi.bsh.de`) requires a
-  one-time offline download/preprocessing step that this project's dev
-  sandbox's restricted network egress can't currently perform. As an
-  interim measure, `js/tidal.js` adds a self-contained, dependency-free
-  approximation, gated to the German Bight/Wadden Sea/Elbe-Weser estuary:
-  a lunar M2 (12.4206h) + spring/neap (synodic-month beat) harmonic
-  estimate scales the reported current speed up toward a modeled
-  tidal-stream peak, fading back to the model's own value at slack —
-  deliberately leaving current *direction* untouched, since inventing a
-  flood/ebb axis without real bathymetry/atlas data risks being
-  confidently wrong, whereas Open-Meteo's own direction, however coarse,
-  is at least real model output. A "Tidenphase-Versatz" slider
-  (Isochronen tab) lets a sailor calibrate the M2 clock's phase against a
-  known local high-water time from a real tide table; a "Verstärkung"
-  slider controls the peak spring amplification (default 1.6×). The same
-  math also drives a "≈ Flut/Ebbe/Stillstand · Springtide/Nipptide" badge
-  in the weather HUD, purely as a cross-check indicator.
-- **Datenquellen panel** (weather HUD, "Datenquellen & Abdeckung"): shows
-  exactly which model backs each of wind/wave/current, its resolution, and
-  the actual forecast time window from the most recently fetched data —
-  so it's visible at a glance what data is live for what times, rather
-  than trusting it silently.
+- **Tidal currents — real BSH data**: `js/bshTides.js` calls BSH's official
+  [Water Level Forecast API](https://gdi.bsh.de/ldproxy/rest/services/WaterLevelForecast)
+  (a documented OGC API Features service, CC BY 4.0, plain CORS-friendly
+  JSON, no auth) for genuine high/low-water timing at the nearest German
+  coastal gauge station, confirmed against a real working open-source
+  client ([EnlightningMan/ha-bsh_tides](https://github.com/EnlightningMan/ha-bsh_tides))
+  rather than guessed, since this project's dev sandbox can't reach
+  `gdi.bsh.de` directly to verify the response shape itself. `js/tidal.js`
+  anchors its flood/ebb/slack current-speed shape to this real local
+  timing when available, falling back to a self-contained lunar M2
+  (12.4206h) + spring/neap harmonic approximation otherwise (station
+  unreachable, no coverage, or the forecast window doesn't cover the
+  requested time) — deliberately never inventing a flood/ebb current
+  *direction* from either path, since guessing an axis without real
+  current-vector data risks being confidently wrong, whereas Open-Meteo's
+  own direction, however coarse, is at least real model output. The real
+  fetch never blocks route computation: `applyTidalAmplification` (used on
+  the isochrone solver's hot path) only ever reads an already-warmed,
+  network-free cache, with the live fetch itself firing in the background
+  — so a slow or unreachable BSH endpoint can never stall route solving.
+  A "Tidenphase-Versatz" slider (Wetter tab) only affects the astronomical
+  *fallback's* phase; a "Verstärkung" slider controls the peak spring
+  amplification (default 1.6×). The same data drives a
+  "Flut/Ebbe/Stillstand · Springtide/Nipptide (BSH `<station>`)" badge in
+  the weather HUD.
+- **Tidal currents — real BSH map overlay**: the Wetter tab's "BSH
+  Gezeitenstrom" toggle adds BSH's official tidal-current WMS
+  (`geoseaportal.de/wss/service/Gezeitenstrom_Daten`) as a real map layer —
+  a standard, public OGC Web Map Service meant for exactly this kind of
+  third-party consumption, not a scraped or reverse-engineered format.
+  `js/bshWmsLayer.js` discovers the actual layer name at runtime from the
+  service's own GetCapabilities response instead of hardcoding a guess,
+  since this project's dev sandbox can't reach `geoseaportal.de` either to
+  confirm the exact layer/dimension names in advance; if the service is
+  unreachable or its response doesn't parse as expected, the toggle just
+  reports that and leaves everything else working. This layer is purely
+  visual — it does not feed into the routing calculation.
+- **Datenquellen panel** (Wetter tab, "Datenquellen & Abdeckung"): shows
+  exactly which model backs each of wind/wave/current, its resolution, the
+  actual forecast time window from the most recently fetched data, and
+  whether the tidal amplification is currently using real BSH data (and
+  which station) or the astronomical fallback — so it's visible at a
+  glance what data is live for what times, rather than trusting it
+  silently.
+- **Wetter tab**: animation layer toggles, the colour field + legend, the
+  data-sources panel, the BSH map overlay toggle, and the tidal
+  amplification controls all live together in a dedicated sidebar tab
+  (matching the app's other tabs) instead of being split across a floating
+  HUD corner panel and the Isochronen tab. The floating weather HUD
+  (top-left) is now a pure live-readout display, with a link into the
+  Wetter tab for the underlying controls; the header "Wetter" button
+  remains a quick all-three-layers shortcut.
 - **Independent animation layer toggles**: wind/current/wave particle
-  animation (weather HUD) can now be switched on and off independently
-  instead of one all-or-nothing overlay — e.g. show only the tidal-current
-  stream without wind clutter. The header "Wetter" button remains a quick
-  all-three shortcut.
+  animation can be switched on and off independently instead of one
+  all-or-nothing overlay — e.g. show only the tidal-current stream without
+  wind clutter.
 - **Windy-style colour field**: a "Fläche" toggle fills the map with a
   smooth, continuous colour field (wind speed, current speed, or wave
   height — selectable) using a fixed blue→cyan→green→yellow→red domain so
