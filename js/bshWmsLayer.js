@@ -1,28 +1,42 @@
 import { state } from './state.js';
 
-// Real BSH current data as a map overlay — a standard, public OGC WMS (Web
+// Real current data as a map overlay — a standard, public OGC WMS (Web
 // Map Service) tile layer, not scraped or reverse-engineered: WMS is a
 // documented protocol explicitly meant for exactly this (letting
-// third-party map clients like this app request rendered map tiles), and
-// BSH exposes several of these anonymously for public use.
+// third-party map clients like this app request rendered map tiles).
+// Tried from two national providers, in order, since neither can be
+// verified from this project's dev sandbox (its network egress can't
+// reach bsh.de/gdi.bsh.de or any *.rws.nl/*.deltares.nl host to inspect a
+// real response):
 //
-// The exact capabilities endpoint can't be verified from this project's
-// dev sandbox (its network egress can't reach bsh.de/gdi.bsh.de to inspect
-// a real response), so this tries several documented-looking candidate
-// URLs in order — a first attempt (geoseaportal.de/wss/service/...)
-// shipped and 404'd in the field; these are different URL patterns found
-// via a second, more careful search, most notably the one BSH's own site
-// links directly as a "GetCapabilities" URL for this exact service
-// (gdi.bsh.de/en/mapservice/Tidal-Current-Data-WMS). Layer name and any
-// dimensions are still discovered at runtime from whichever candidate's
-// capabilities response actually parses, rather than hardcoding a guess.
-// If none of them work, the toggle just reports that and leaves the rest
-// of the app untouched — this is still a best-effort, field-unverified
-// integration.
+// 1. BSH (Germany) — confirmed reachable in a previous field test, but
+//    its default/only style appears to render as plain dots with no
+//    visible direction/magnitude even with the correct WMS dimension
+//    (TIME) now being passed, suggesting the *service itself* may simply
+//    not offer a real vector/arrow style, not a client-side bug.
+// 2. Rijkswaterstaat/RWsOS (Netherlands) — the model believed to back
+//    wasserkarte.net's "Strömungsatlas" (a daily-refreshed North Sea sea
+//    current model driven by Harmonie weather data, hourly maps up to
+//    48h out). It's built on Deltares' Delft-FEWS software, which has a
+//    documented, standard WMS-T (WMS with a time dimension) service
+//    usually served under a `/FewsWebServices/wms` path; the exact host
+//    path used by RWsOS's own public viewer (rwsos.rws.nl/viewer/map/
+//    noordzee/stroming, backed by rwsos-dataservices-prod.avi.deltares.nl)
+//    couldn't be confirmed, so this is an educated guess based on that
+//    convention, not a verified endpoint. Notably, this model's coverage
+//    is reported to include the German Bight too, not just Dutch waters.
+//
+// Layer name, styles, and any dimensions are always discovered at runtime
+// from whichever candidate's capabilities response actually parses,
+// rather than hardcoding a guess. If none of them work, the toggle just
+// reports that and leaves the rest of the app untouched — this is still
+// a best-effort, field-unverified integration.
 const CAPABILITIES_URL_CANDIDATES = [
   'https://gdi.bsh.de/en/mapservice/Tidal-Current-Data-WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0',
   'https://gdi.bsh.de/mapservice_gs/Gezeitenstrom_Daten/wms?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0',
-  'https://www.geoseaportal.de/wss/service/Gezeitenstrom_Daten/guest?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0'
+  'https://www.geoseaportal.de/wss/service/Gezeitenstrom_Daten/guest?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0',
+  'https://rwsos-dataservices-prod.avi.deltares.nl/FewsWebServices/wms?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0',
+  'https://noos.matroos.rws.nl/direct/wms?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0'
 ];
 const FETCH_TIMEOUT_MS = 8000;
 
@@ -41,6 +55,15 @@ async function fetchWithTimeout(url, timeoutMs) {
 
 function xlinkHref(el) {
   return el.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || el.getAttribute('xlink:href') || el.getAttribute('href');
+}
+
+// Attribution has to follow whichever candidate actually answered, since
+// candidates now span more than one national provider.
+function attributionForUrl(capabilitiesUrl) {
+  const host = new URL(capabilitiesUrl).hostname;
+  if (host.endsWith('bsh.de')) return '© BSH Strömungen (bsh.de)';
+  if (host.endsWith('rws.nl') || host.endsWith('deltares.nl')) return '© Rijkswaterstaat/RWsOS (rws.nl)';
+  return `© ${host}`;
 }
 
 function parseCapabilities(capabilitiesUrl, text) {
@@ -88,9 +111,12 @@ function parseCapabilities(capabilitiesUrl, text) {
     if (href) getMapUrl = href;
   }
 
-  const preferred = layers.find((l) => /gezeiten|tidal|strom|current/i.test(l.title) || /gezeiten|tidal|strom|current/i.test(l.name)) || layers[0];
+  // Matches German (Gezeiten/Strom), English (tidal/current), and Dutch
+  // (stroming/stroom/snelheid/getij) naming, since candidates now span
+  // both a German (BSH) and a Dutch (Rijkswaterstaat) provider.
+  const preferred = layers.find((l) => /gezeiten|tidal|strom|current|stroming|snelheid|getij/i.test(l.title) || /gezeiten|tidal|strom|current|stroming|snelheid|getij/i.test(l.name)) || layers[0];
 
-  return { getMapUrl, layer: preferred, allLayers: layers };
+  return { getMapUrl, layer: preferred, allLayers: layers, attribution: attributionForUrl(capabilitiesUrl) };
 }
 
 async function discoverCapabilities() {
@@ -204,7 +230,7 @@ function addTileLayer(caps, layerName, styleName) {
     transparent: true,
     version: '1.3.0',
     opacity: 0.75,
-    attribution: '© BSH Strömungen (bsh.de)',
+    attribution: caps.attribution || '© BSH Strömungen (bsh.de)',
     ...appliedDimensionParams
   });
   wmsLeafletLayer.addTo(state.map);
