@@ -187,7 +187,8 @@ function wireControls() {
       const kindTag = r.kind === 'macro' ? 'Makro' : 'Mikro';
       row.textContent = r.loaded
         ? `✓ ${r.label} [${kindTag}] — ${r.timestepCount} Zeitschritte`
-        : `${r.recentlyFailed ? '✗' : '·'} ${r.label} [${kindTag}]${r.recentlyFailed ? ' — nicht erreichbar' : ''}`;
+        : `${r.recentlyFailed ? '✗' : '·'} ${r.label} [${kindTag}]${r.recentlyFailed ? ` — nicht erreichbar (${r.lastError || 'unbekannter Fehler'})` : ''}`;
+      row.title = r.lastError || '';
       bshGribStatus.appendChild(row);
     });
   }
@@ -211,7 +212,8 @@ function wireControls() {
     if (result.ok) {
       showToast('BSH-Strömungsdaten (GRIB) geladen', 'emerald');
     } else {
-      showToast('BSH-Strömungsdaten (GRIB) derzeit nicht verfügbar', 'rose');
+      const firstError = result.regions.find(r => !r.ok)?.error;
+      showToast(`BSH-Strömungsdaten (GRIB) nicht verfügbar${firstError ? `: ${firstError}` : ''}`, 'rose');
     }
   });
 
