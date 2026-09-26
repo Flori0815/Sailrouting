@@ -12,7 +12,7 @@
 // source Open-Meteo has), and there's no single `models=` value that
 // selects the right model for both variables at once.
 import { applyTidalAmplification } from './tidal.js';
-import { peekBshCurrent, warmBshGribCache } from './bshGribCurrent.js';
+import { peekBshCurrent } from './bshGribCurrent.js';
 
 const FALLBACK = { tws: 14.0, twd: 240, curSpeed: 0.8, curDir: 120, waveHeight: 0.4, waveDir: 240 };
 const FETCH_TIMEOUT_MS = 8000;
@@ -23,7 +23,7 @@ const metoceanCache = new Map();
 // most recently fetched hourly data, so the UI can show the sailor exactly
 // what's backing the numbers and how far forecast coverage actually
 // extends — see js/results.js#renderDataSourcePanel.
-const lastCoverage = { wind: null, marine: null, fetchedAt: null, bshGribActive: false };
+const lastCoverage = { wind: null, marine: null, fetchedAt: null, bshRegion: null };
 
 export function getDataSourceInfo() {
   return {
@@ -37,10 +37,10 @@ export function getDataSourceInfo() {
       resolution: '~5×7 km, Nordsee/Europa',
       coverage: lastCoverage.marine
     },
-    current: lastCoverage.bshGribActive
+    current: lastCoverage.bshRegion
       ? {
-          label: 'BSH Strömungsvorhersage (GRIB, real U/V)',
-          resolution: '0.5 sm, Deutsche Bucht',
+          label: `BSH Strömungsvorhersage (GRIB, ${lastCoverage.bshRegion.label})`,
+          resolution: lastCoverage.bshRegion.kind === 'micro' ? '90 m' : '0.5 sm',
           coverage: lastCoverage.marine
         }
       : {
@@ -122,12 +122,15 @@ export async function fetchMetoceanData(lat, lng, targetDate = new Date()) {
     // current AND the tidal-amplification heuristic below rather than
     // stacking with either. Synchronous cache peek only (see
     // js/tidal.js's peekTidePhase for the identical hot-path-safe
-    // pattern) — never blocks this call on a live GRIB fetch/parse; if
-    // nothing is cached yet, this also fires a non-blocking warm-up so a
-    // *later* call can benefit.
+    // pattern) — never blocks this call on a live GRIB fetch/parse.
+    // peekBshCurrent itself decides which region model applies (a fine
+    // "micro" river/estuary grid if this point falls in one, otherwise
+    // the coarse "macro" Deutsche Bucht default) fresh on every call and
+    // fires whatever background warm-ups are needed — so a single route
+    // computation naturally switches models as it crosses region
+    // boundaries, with no separate state to manage here.
     const bshCurrent = peekBshCurrent(lat, lng, targetDate);
-    lastCoverage.bshGribActive = !!bshCurrent;
-    if (!bshCurrent) warmBshGribCache();
+    lastCoverage.bshRegion = bshCurrent ? { code: bshCurrent.regionCode, kind: bshCurrent.regionKind, label: bshCurrent.regionLabel } : null;
 
     // German Bight/Wadden Sea tidal-stream amplification heuristic — see
     // js/tidal.js for why this exists and what it deliberately does not do
