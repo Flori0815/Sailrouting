@@ -36,7 +36,8 @@ js/
   tidal.js                       German Bight/Wadden Sea tidal-current modeling
   bshTides.js                    Real BSH water-level forecast API client
   gribParser.js                   Minimal GRIB2 (WMO binary) reader
-  bshGribCurrent.js                Real BSH current data (GRIB2 U/V vectors)
+  bshGribCurrent.js                Real BSH current data (GRIB2 U/V, multi-region macro/micro)
+  bshCurrentArrows.js               Real current vector grid drawn on the map
   savedRoutes.js                 Save/load voyage plans in browser localStorage
   particleField.js                 Animated wind/current particle overlay
   departureWindow.js                Compares routes across a ±X hour window
@@ -311,42 +312,71 @@ After that first setup, every merge to `main` redeploys automatically.
   packed data only — the two simplest, most common GRIB2 encodings;
   anything else, e.g. JPEG2000 packing, throws a specific "unsupported"
   error rather than risk silently misreading the bytes into wrong current
-  values). `js/bshGribCurrent.js` fetches BSH's `fixname` shortcut URL
-  (a constant filename BSH maintains specifically for automated
-  background updates, so no date/hour has to be computed client-side),
-  covering the Deutsche Bucht (0.5nm grid — the region `js/tidal.js`'s
-  heuristic already targets), and bilinearly samples the decoded U/V
-  grids at a given lat/lon/time.
-  `js/metocean.js#fetchMetoceanData` now prefers this real vector data
-  over both Open-Meteo's coarse global current model *and* the
-  magnitude-only tidal-amplification heuristic whenever it's cached and
-  covers the query — a genuine capability upgrade, not just a nicer
-  picture: unlike the old WMS layer (purely visual, explicitly never fed
-  into routing), this flows straight into `fetchMetoceanData`, so it
-  actually improves route calculations too, and into the existing
-  animated particle overlay (no separate "map layer" needed — real
-  vectors just make the existing wind/current animation more accurate).
-  Follows the same synchronous-peek/background-warm pattern
-  `js/bshTides.js` already established for the water-level API, so a
-  slow or unreachable GRIB fetch can never add latency to the routing
-  solver's hot path. The Wetter tab's "BSH Strömung (GRIB, real)" button
-  triggers an explicit load and reports the real outcome (timesteps
-  loaded, or the exact error) instead of a silent background attempt
-  only.
-  **Verification**: `js/gribParser.js` is checked against a hand-built
-  synthetic GRIB2 fixture with known bytes and a hand-computed expected
-  grid (covering the grid-definition, product-definition, and simple-
+  values).
+- **Multiple BSH regions, macro by default with automatic micro
+  switching mid-route**. BSH doesn't publish just one current-model
+  file: a coarse "macro" circulation model per sea area (0.5nm grid,
+  `db` = Deutsche Bucht by default, plus `wb` = westliche Ostsee) and
+  much finer "micro" models per estuary/fairway stretch (90m grid — the
+  four Elbe segments AusAlt/CuxBru/BruPag/PagHam), each its own separate
+  GRIB2 file at `.../grib2/Current_{code}_today.grb2` (a working
+  reference client shared directly disagreed with BSH's own docs on one
+  detail — a `fixname` subdirectory or not — so `js/bshGribCurrent.js`
+  tries both, newest-first). `peekBshCurrent(lat, lon, date)` checks
+  every region fresh on *every* call: a micro region whose real grid
+  covers the point wins over the macro default whenever both do, and a
+  coarse hint bounding box (not each grid's exact extent, which isn't
+  known until that file is actually loaded) decides which micro regions
+  are even worth fetching for a given area, so a route that never nears
+  the Elbe only ever loads the macro file. Because this check runs fresh
+  per query rather than once per route, a single route computation
+  genuinely switches models as it crosses region boundaries — verified
+  with a synthetic two-region fixture (a wide macro grid plus a small,
+  distinctly-valued micro grid inside it): the same session correctly
+  resolves the macro model outside the micro grid, the micro model
+  inside it, and back to macro again immediately on the very next query,
+  with each region's file fetched exactly once regardless of how many
+  times the query point crosses back and forth.
+  `js/metocean.js#fetchMetoceanData` now prefers whichever real region
+  matched over both Open-Meteo's coarse global current model *and* the
+  magnitude-only tidal-amplification heuristic — a genuine capability
+  upgrade, not just a nicer picture: unlike the old WMS layer (purely
+  visual, explicitly never fed into routing), this flows straight into
+  route calculations too. Follows the same synchronous-peek/background-
+  warm pattern `js/bshTides.js` already established for the water-level
+  API, so a slow or unreachable GRIB fetch can never add latency to the
+  routing solver's hot path. The Wetter tab's "Jetzt laden" button loads
+  every region in parallel and reports the real per-region outcome
+  (✓/✗ + timestep count or error) instead of one pass/fail for
+  "BSH data" as a whole.
+- **Real current vectors drawn on the map ("Pfeile" toggle)**. Rather
+  than only feeding the existing animated wind/current particle overlay
+  (a smoothed approximation), `js/bshCurrentArrows.js` draws the actual
+  BSH grid nodes as directional arrows colour-coded by speed — the same
+  way BSH's own reference tooling shows current data — for whichever
+  loaded region(s) currently intersect the visible map area, decimated
+  to a legible density and redrawn on pan/zoom/voyage-scrub. Deliberately
+  narrower in scope than the reference tooling it's modeled on: no
+  fairway/channel-centerline overlay, since that's separate navigational
+  geodata this project has no source for.
+  **Verification**: `js/gribParser.js` is checked against hand-built
+  synthetic GRIB2 fixtures with known bytes and hand-computed expected
+  grids (covering the grid-definition, product-definition, and simple-
   packing sections, the GRIB sign-bit integer convention for both 2- and
   4-byte fields including negative longitudes, and the zero-bit
   degenerate packing case) — the closest available substitute for a real
-  file, since this sandbox can't reach `filebox.bsh.de` to fetch one.
-  Two things remain genuinely unverified: whether `filebox.bsh.de` allows
-  cross-origin browser fetches (CORS) at all — if not, every load fails
-  cleanly and the app falls back to Open-Meteo + the heuristic, same as
-  if BSH were simply unreachable — and whether BSH's real files actually
-  use simple packing (if they use JPEG2000 or complex packing instead,
-  `gribParser.js` reports that specific unsupported-template error rather
-  than guessing).
+  file, since this sandbox can't reach `filebox.bsh.de` to fetch one. A
+  full-browser Playwright pass with two mocked region files (covering the
+  app's own default Cuxhaven→Helgoland preset) confirmed the region
+  status panel, the arrow overlay (verified via non-blank canvas pixels,
+  toggling correctly on/off), and the full route computation/GPX export
+  all work together with zero regressions. Two things remain genuinely
+  unverified: whether `filebox.bsh.de` allows cross-origin browser
+  fetches (CORS) at all — if not, every load fails cleanly and the app
+  falls back to Open-Meteo + the heuristic, same as if BSH were simply
+  unreachable — and whether BSH's real files actually use simple packing
+  (if they use JPEG2000 or complex packing instead, `gribParser.js`
+  reports that specific unsupported-template error rather than guessing).
 - **Saved routes (browser localStorage)**: the Wegpunkte tab's
   "Gespeicherte Routen" section lets a sailor save the current waypoints,
   hazard zones, and solver settings (fan width, refinement passes, wave

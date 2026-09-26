@@ -427,14 +427,19 @@
             <i data-lucide="waves" class="w-4 h-4 text-emerald-400"></i>
             BSH Strömung (GRIB, real)
           </span>
-          <button id="btnLoadBshGribCurrent" class="text-[10px] px-2 py-1 rounded-lg border border-slate-700 text-slate-400 bg-marine-900/60 font-semibold active:scale-95 transition-transform">
-            Jetzt laden
-          </button>
+          <div class="flex items-center gap-1.5">
+            <button id="btnToggleBshCurrentArrows" title="Echte Strömungspfeile auf der Karte ein/ausblenden" aria-pressed="false" class="text-[10px] px-2 py-1 rounded-lg border border-slate-700 text-slate-400 bg-marine-900/60 font-semibold active:scale-95 transition-transform">
+              Pfeile
+            </button>
+            <button id="btnLoadBshGribCurrent" class="text-[10px] px-2 py-1 rounded-lg border border-slate-700 text-slate-400 bg-marine-900/60 font-semibold active:scale-95 transition-transform">
+              Jetzt laden
+            </button>
+          </div>
         </div>
         <p class="text-[11px] text-slate-400 leading-relaxed">
-          Lädt BSH's offizielle Strömungsvorhersage (GRIB2, echte U/V-Vektoren, 0,5 sm Raster, Deutsche Bucht) direkt vom öffentlichen Server. Ersetzt — wo verfügbar — sowohl die Wind/Strom-Animation als auch die Strömungsdaten in der Routenberechnung durch echte amtliche Werte, statt der groben Näherung unten. Wird zusätzlich automatisch im Hintergrund geladen, sobald die Routenberechnung sie zum ersten Mal braucht. Experimentell: ob filebox.bsh.de browserseitige Anfragen (CORS) zulässt, konnte aus der Entwicklungsumgebung heraus nicht verifiziert werden.
+          Lädt BSH's offizielle Strömungsvorhersage (GRIB2, echte U/V-Vektoren) direkt vom öffentlichen Server — die grobe Makro-Zirkulation (Deutsche Bucht, 0,5 sm) als Standard, plus feine Mikro-Gitter für die Elbe-Fahrwasser (90 m), die automatisch übernehmen, sobald die Route in deren Gebiet verläuft — auch mitten in derselben Routenberechnung. Ersetzt — wo verfügbar — sowohl die Wind/Strom-Animation als auch die Strömungsdaten in der Routenberechnung durch echte amtliche Werte, statt der groben Näherung unten. "Pfeile" zeigt die echten Vektoren direkt auf der Karte (farbcodiert nach Geschwindigkeit, wie bei BSH selbst), statt der animierten Näherung oben. Wird zusätzlich automatisch im Hintergrund geladen, sobald die Routenberechnung sie zum ersten Mal braucht. Experimentell: ob filebox.bsh.de browserseitige Anfragen (CORS) zulässt, konnte aus der Entwicklungsumgebung heraus nicht verifiziert werden.
         </p>
-        <div id="bshGribStatus" class="text-[10px] text-slate-500"></div>
+        <div id="bshGribStatus" class="text-[10px] text-slate-500 space-y-0.5"></div>
       </div>
 
       <div class="bg-marine-900/80 p-3 rounded-xl border border-slate-800 space-y-1.5">

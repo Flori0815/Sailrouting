@@ -13,7 +13,8 @@ import { triggerIsochroneRouteOptimization } from './optimizer.js';
 import { initParticleField, setLayerVisible, isLayerVisible, setColorFieldVisible, setColorFieldParam, colorScaleCss } from './particleField.js';
 import { findBestDepartureTime, toggleDepartureVariantsOnMap } from './departureWindow.js';
 import { updateTidalPhaseBadge, renderDataSourcesPanel } from './results.js';
-import { loadBshGribCurrentNow, isBshGribCurrentLoaded } from './bshGribCurrent.js';
+import { loadBshGribCurrentNow, isAnyBshGribRegionLoaded, getBshGribRegionStatus } from './bshGribCurrent.js';
+import { initBshCurrentArrows, setBshCurrentArrowsVisible, isBshCurrentArrowsVisible, refreshBshCurrentArrowsNow } from './bshCurrentArrows.js';
 import { readOptimizerConfig } from './optimizer.js';
 import { saveCurrentRoute, renderSavedRoutesList } from './savedRoutes.js';
 
@@ -175,8 +176,24 @@ function wireControls() {
   const bshGribBtn = document.getElementById('btnLoadBshGribCurrent');
   const bshGribStatus = document.getElementById('bshGribStatus');
 
-  if (isBshGribCurrentLoaded()) {
-    bshGribStatus.textContent = 'BSH-GRIB-Strömungsdaten aktiv (bereits geladen).';
+  // One line per region: ✓/✗ + label, so it's clear at a glance which
+  // macro/micro models are actually available right now, not just
+  // whether *something* loaded.
+  function renderBshGribStatus(regions) {
+    bshGribStatus.innerHTML = '';
+    regions.forEach((r) => {
+      const row = document.createElement('div');
+      row.className = r.loaded ? 'text-emerald-400' : r.recentlyFailed ? 'text-rose-400' : 'text-slate-500';
+      const kindTag = r.kind === 'macro' ? 'Makro' : 'Mikro';
+      row.textContent = r.loaded
+        ? `✓ ${r.label} [${kindTag}] — ${r.timestepCount} Zeitschritte`
+        : `${r.recentlyFailed ? '✗' : '·'} ${r.label} [${kindTag}]${r.recentlyFailed ? ' — nicht erreichbar' : ''}`;
+      bshGribStatus.appendChild(row);
+    });
+  }
+
+  if (isAnyBshGribRegionLoaded()) {
+    renderBshGribStatus(getBshGribRegionStatus());
   }
 
   bshGribBtn.addEventListener('click', async () => {
@@ -185,15 +202,27 @@ function wireControls() {
     const result = await loadBshGribCurrentNow();
     bshGribBtn.disabled = false;
     bshGribBtn.textContent = 'Jetzt laden';
+    // Re-read the canonical per-region status rather than result.regions
+    // directly — loadBshGribCurrentNow's own return shape ({ok, error})
+    // differs from getBshGribRegionStatus's ({loaded, recentlyFailed}),
+    // and renderBshGribStatus expects the latter.
+    renderBshGribStatus(getBshGribRegionStatus());
+    refreshBshCurrentArrowsNow();
     if (result.ok) {
-      bshGribStatus.textContent = `Aktiv: ${result.timestepCount} Zeitschritte geladen (Deutsche Bucht).`;
       showToast('BSH-Strömungsdaten (GRIB) geladen', 'emerald');
     } else {
-      // Surfaced directly in the UI (not just the console) so a failure
-      // here can be reported back precisely without needing devtools.
-      bshGribStatus.textContent = `Derzeit nicht erreichbar: ${result.error || 'unbekannter Fehler'}`;
       showToast('BSH-Strömungsdaten (GRIB) derzeit nicht verfügbar', 'rose');
     }
+  });
+
+  const bshArrowsBtn = document.getElementById('btnToggleBshCurrentArrows');
+  bshArrowsBtn.setAttribute('aria-pressed', String(isBshCurrentArrowsVisible()));
+  bshArrowsBtn.addEventListener('click', () => {
+    const next = setBshCurrentArrowsVisible(!isBshCurrentArrowsVisible());
+    bshArrowsBtn.setAttribute('aria-pressed', String(next));
+    bshArrowsBtn.className = next
+      ? 'text-[10px] px-2 py-1 rounded-lg border border-emerald-400/50 text-emerald-300 bg-emerald-500/10 font-semibold active:scale-95 transition-transform'
+      : 'text-[10px] px-2 py-1 rounded-lg border border-slate-700 text-slate-400 bg-marine-900/60 font-semibold active:scale-95 transition-transform';
   });
 
   document.getElementById('checkTidalHeuristicEnabled').addEventListener('change', (e) => {
@@ -341,6 +370,7 @@ function init() {
   try {
     initMap();
     initParticleField();
+    initBshCurrentArrows();
     wireControls();
 
     const now = new Date();

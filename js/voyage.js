@@ -1,6 +1,7 @@
 import { state } from './state.js';
 import { updateHudDisplay } from './results.js';
 import { setFieldTime } from './particleField.js';
+import { setBshCurrentArrowsTime } from './bshCurrentArrows.js';
 
 // Finds the largest index i such that times[i] <= target, clamped to
 // [0, times.length - 2] so callers can always safely read times[i + 1].
@@ -71,6 +72,7 @@ export function initVoyageScrubber() {
     // conditions regardless of how far the scrubber has been moved.
     const scrubTime = new Date(data.departureTime.getTime() + targetHours * 3600 * 1000);
     setFieldTime(scrubTime);
+    setBshCurrentArrowsTime(scrubTime);
 
     const elH = Math.floor(targetHours);
     const elM = Math.round((targetHours - elH) * 60);
