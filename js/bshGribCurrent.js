@@ -80,7 +80,7 @@ const regionState = new Map(); // code -> { fileCache, fileFailedAt, fetchInFlig
 function getRegionState(code) {
   let rs = regionState.get(code);
   if (!rs) {
-    rs = { fileCache: null, fileFailedAt: null, fetchInFlight: null, decodedCache: new Map() };
+    rs = { fileCache: null, fileFailedAt: null, fetchInFlight: null, decodedCache: new Map(), lastError: null };
     regionState.set(code, rs);
   }
   return rs;
@@ -149,8 +149,8 @@ export function warmBshGribRegion(code) {
   if (rs.fileFailedAt && Date.now() - rs.fileFailedAt < FAILURE_BACKOFF_MS) return;
 
   rs.fetchInFlight = fetchAndIndexRegion(code)
-    .then((result) => { rs.fileCache = result; rs.fileFailedAt = null; rs.decodedCache.clear(); })
-    .catch(() => { rs.fileFailedAt = Date.now(); })
+    .then((result) => { rs.fileCache = result; rs.fileFailedAt = null; rs.lastError = null; rs.decodedCache.clear(); })
+    .catch((err) => { rs.fileFailedAt = Date.now(); rs.lastError = err.message || String(err); })
     .finally(() => { rs.fetchInFlight = null; });
 }
 
@@ -328,7 +328,8 @@ export function getBshGribRegionStatus() {
       kind: def.kind,
       loaded: !!(rs && rs.fileCache),
       timestepCount: rs && rs.fileCache ? rs.fileCache.uMessages.length : 0,
-      recentlyFailed: !!(rs && rs.fileFailedAt && !rs.fileCache)
+      recentlyFailed: !!(rs && rs.fileFailedAt && !rs.fileCache),
+      lastError: rs ? rs.lastError : null
     };
   });
 }
@@ -344,12 +345,14 @@ export async function loadBshGribCurrentNow() {
       const rs = getRegionState(def.code);
       rs.fileCache = result;
       rs.fileFailedAt = null;
+      rs.lastError = null;
       rs.decodedCache.clear();
       return { code: def.code, label: def.label, kind: def.kind, ok: true, timestepCount: result.uMessages.length };
     } catch (err) {
       const rs = getRegionState(def.code);
       rs.fileFailedAt = Date.now();
-      return { code: def.code, label: def.label, kind: def.kind, ok: false, error: err.message || String(err) };
+      rs.lastError = err.message || String(err);
+      return { code: def.code, label: def.label, kind: def.kind, ok: false, error: rs.lastError };
     }
   }));
   return { ok: regions.some(r => r.ok), regions };
