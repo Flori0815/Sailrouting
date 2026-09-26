@@ -24,12 +24,13 @@
 //   https://filebox.bsh.de/Stroemungsvorhersagen/grib2/fixname/Current_{code}_today.grb2
 //
 // The file at either URL is overwritten server-side with the latest
-// forecast (no date/hour has to be computed client-side). Whether
-// filebox.bsh.de allows cross-origin browser fetches (CORS) at all is
-// unverified from this sandbox; if it doesn't, every call here fails
-// cleanly and the app falls back to Open-Meteo's current +
-// js/tidal.js's heuristic amplification, exactly as if BSH were simply
-// unreachable.
+// forecast (no date/hour has to be computed client-side). Confirmed in the
+// field: filebox.bsh.de does not send CORS headers, so both direct URLs
+// fail with the browser's generic "Failed to fetch" from this app's GitHub
+// Pages origin -- see candidateUrlsFor's CORS_PROXIES fallback below for
+// how that's worked around. If every candidate (direct + proxied) still
+// fails, the app falls back to Open-Meteo's current + js/tidal.js's
+// heuristic amplification, exactly as if BSH were simply unreachable.
 import { indexGrib2File, decodeGrib2Grid, messageValidTime } from './gribParser.js';
 
 const FETCH_TIMEOUT_MS = 15000; // a multi-day regional GRIB file is a real download, not a small API call
@@ -101,11 +102,30 @@ async function fetchWithTimeout(url, timeoutMs) {
   }
 }
 
+// Confirmed in the field (every direct attempt fails with the browser's
+// generic cross-origin "Failed to fetch", never an HTTP error): filebox.bsh.de
+// sends no Access-Control-Allow-Origin, so a browser fetch() from any origin
+// other than one BSH itself allowlists is blocked before the response body
+// is ever readable -- no URL variant or reference-client fidelity changes
+// that, since CORS is enforced by the browser against *this page's origin*,
+// not against the request's contents. This app is a static GitHub Pages
+// site with no backend of its own, so the only way to still reach the file
+// from the browser is through a third-party CORS proxy that fetches it
+// server-side (not subject to browser CORS) and re-serves it with
+// permissive headers. Proxies are only tried after both direct URLs, so
+// this dependency drops out on its own the day BSH adds real CORS headers.
+const CORS_PROXIES = [
+  (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  (url) => `https://corsproxy.io/?url=${encodeURIComponent(url)}`
+];
+
 function candidateUrlsFor(code) {
-  return [
+  const direct = [
     `https://filebox.bsh.de/Stroemungsvorhersagen/grib2/Current_${code}_today.grb2`,
     `https://filebox.bsh.de/Stroemungsvorhersagen/grib2/fixname/Current_${code}_today.grb2`
   ];
+  const proxied = CORS_PROXIES.flatMap((wrap) => direct.map(wrap));
+  return [...direct, ...proxied];
 }
 
 async function fetchAndIndexRegion(code) {
